@@ -1,6 +1,6 @@
 import {pool} from '../config/db.js';
 
-// 📌 Lister uniquement les pays actifs
+//  Lister uniquement les pays actifs
 export const findActiveCountries = async () => {
   const result = await pool.query(
     `SELECT id, name, code, phone_prefix, currency_id 
@@ -11,13 +11,13 @@ export const findActiveCountries = async () => {
   return result.rows;
 };
 
-// 📌 Lister tous les pays
+//  Lister tous les pays
 export const findAllCountries = async () => {
   const result = await pool.query(`SELECT * FROM countries ORDER BY name ASC`);
   return result.rows;
 };
 
-// 📌 Créer un pays
+//  Créer un pays
 export const createCountry = async (name, code, phone_prefix, currency_id) => {
   const result = await pool.query(
     `INSERT INTO countries (name, code, phone_prefix, currency_id) 
@@ -28,7 +28,7 @@ export const createCountry = async (name, code, phone_prefix, currency_id) => {
   return result.rows[0];
 };
 
-// 📌 Mettre à jour un pays
+//  Mettre à jour un pays
 export const updateCountryById = async (id, name, code, phone_prefix, currency_id, is_active) => {
   const result = await pool.query(
     `UPDATE countries 
@@ -39,7 +39,7 @@ export const updateCountryById = async (id, name, code, phone_prefix, currency_i
   return result.rows[0];
 };
 
-// 📌 Supprimer un pays
+//  Supprimer un pays
 export const deleteCountryById = async (id) => {
   const result = await pool.query(`DELETE FROM countries WHERE id=$1 RETURNING *`, [id]);
   return result.rows[0];

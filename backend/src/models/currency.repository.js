@@ -1,7 +1,7 @@
 // src/models/currency.model.js
 import {pool} from '../config/db.js';
 
-// 📌 Lister uniquement les devises actives
+//  Lister uniquement les devises actives
 export const findActiveCurrencies = async () => {
   const result = await pool.query(
     `SELECT id, code, name, symbol 
@@ -12,13 +12,13 @@ export const findActiveCurrencies = async () => {
   return result.rows;
 };
 
-// 📌 Lister toutes les devises
+//  Lister toutes les devises
 export const findAllCurrencies = async () => {
   const result = await pool.query(`SELECT * FROM currencies ORDER BY code ASC`);
   return result.rows;
 };
 
-// 📌 Créer une devise
+//  Créer une devise
 export const createCurrency = async (code, name, symbol) => {
   const result = await pool.query(
     `INSERT INTO currencies (code, name, symbol) 
@@ -29,7 +29,7 @@ export const createCurrency = async (code, name, symbol) => {
   return result.rows[0];
 };
 
-// 📌 Mettre à jour une devise
+//  Mettre à jour une devise
 export const updateCurrencyById = async (id, code, name, symbol, is_active) => {
   const result = await pool.query(
     `UPDATE currencies 
@@ -40,7 +40,7 @@ export const updateCurrencyById = async (id, code, name, symbol, is_active) => {
   return result.rows[0];
 };
 
-// 📌 Supprimer une devise
+//  Supprimer une devise
 export const deleteCurrencyById = async (id) => {
   const result = await pool.query(`DELETE FROM currencies WHERE id=$1 RETURNING *`, [id]);
   return result.rows[0];
