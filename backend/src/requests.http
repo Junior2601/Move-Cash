@@ -1,0 +1,107 @@
+
+# @token=123456789globaltokenAccessKey
+# @accessKey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbiI6eyJpZCI6NTUsInV1aWQiOiIyNzczY2VkNS01MGUxLTQyYzItYWE1OC0zMjg3YTAxNGI1YWYiLCJjb2RlIjoiQURNMDAxIiwiY2l2aWxpdHlfdXVpZCI6IjljNTZkYjliLWIwYTktNDY1NS1hMjE2LWI3MDU5YjczNGYwMCIsImNpdmlsaXR5Ijp7InV1aWQiOiI5YzU2ZGI5Yi1iMGE5LTQ2NTUtYTIxNi1iNzA1OWI3MzRmMDAiLCJsaWJlbGxlIjoiTW9uc2lldXIiLCJzbHVnIjoibXIifSwiZW1haWwiOiJzb25lY0B5b3BtYWlsLmNvbSIsIm5vbSI6IlNPTkVDIiwicHJlbm9tcyI6IkFkbWluIiwiYXZhdGFyIjpudWxsLCJ0eXBlIjoic3VwZXJhZG1pbiIsImlzX3ZlcmlmaWVkIjp0cnVlLCJpc19sb2NrZWQiOmZhbHNlLCJpc19hY3RpdmVfb3RwIjp0cnVlLCJlbWFpbF92ZXJpZmllZF9hdCI6IjIwMjUtMDUtMDdUMTc6MzQ6MjguMDAwWiIsIm1hcml0YWxfc3RhdHVzX3V1aWQiOiJmNjNmYmIwMi00NjdiLTQ1NGItODJhZS01Y2FiMmJmZWZhZWYiLCJtYXJpdGFsX3N0YXR1cyI6eyJ1dWlkIjoiZjYzZmJiMDItNDY3Yi00NTRiLTgyYWUtNWNhYjJiZmVmYWVmIiwibGliZWxsZSI6Ik1hcmnDqSIsInNsdWciOiJtYXJpZSJ9LCJvZmZpY2VzIjpbXSwiYmlydGhfZGF0ZSI6IjIwMDAtMDEtMDEiLCJzdGF0dXMiOiJhY3RpdmUiLCJjcmVhdGVkX2F0IjoiMjAyNS0wNS0wN1QxNzozNDoyOC4wMDBaIiwidXBkYXRlZF9hdCI6IjIwMjUtMDUtMDdUMTc6MzQ6MjguMDAwWiJ9LCJpYXQiOjE3NDY3MjczNDMsImV4cCI6MTc0NjczMDk0M30.9YNcM7UkARuPRteBV1t3ZhbeMzlLb9smTd0ZKsDhNFY
+
+
+### App request
+GET http://localhost:5000/
+Content-Type: application/json
+# Authorization-Global: Bearer {{token}}
+#Authorization: Bearer token_jwt_normal
+
+### Post request to login as admin
+POST http://localhost:5000/api/admin/login
+Content-Type: application/json
+# Authorization-Global: Bearer {{token}}
+
+{
+  "email": "admin@transfert.com",
+  "password": "1234"
+}
+
+### Post request to login OTP as admin
+POST http://localhost:3000/auth/admin/otp
+Content-Type: application/json
+# Authorization-Global: Bearer {{token}}
+# Authorization: Bearer {{accessKey}}
+
+{
+  "otp": "1111",
+}
+
+
+
+
+
+
+
+
+### App request update admin profile
+GET http://localhost:3000/admin/profile
+# Authorization-Global: Bearer {{token}}
+# Authorization: Bearer {{accessKey}}
+Content-Type: application/json
+
+
+
+### App request get profile
+GET http://localhost:3000/auth/profile
+# Authorization-Global: Bearer {{token}}
+# Authorization: Bearer {{accessKey}}
+Content-Type: application/json
+
+
+### App request update admin profile
+GET http://localhost:3000/auth/admin/profile
+# Authorization-Global: Bearer {{token}}
+# Authorization: Bearer {{accessKey}}
+Content-Type: application/json
+
+
+
+
+### App request update admin profile
+GET http://localhost:3000/auth/seller/profile
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InNlbGxlcjEiLCJzdWIiOjEsImlhdCI6MTc0NjYzMTE2OCwiZXhwIjoxNzQ2NjM0NzY4fQ.nhHXbL2FHwMZZxm-PMn8bf57zS97XCFXRpWYTp6YuGw
+Content-Type: application/json
+
+
+### App request update profile
+POST http://localhost:3000/auth/admin/update-profile
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluMSIsInN1YiI6MSwiaWF0IjoxNzQ1ODU4NDgzLCJleHAiOjE3NDU4NjIwODN9.JLckg1-q2WgDQIkeC0kjmPg8J-x8hFBCTJ0rnt4wTPo
+Content-Type: application/json
+
+
+{
+  "username": "admin1",
+  "email": "emrys@yopmail.com"
+}
+
+
+
+
+### App request update admin profile
+POST http://localhost:3000/auth/seller/login
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluMSIsInN1YiI6MSwiaWF0IjoxNzQ1ODU4NDgzLCJleHAiOjE3NDU4NjIwODN9.JLckg1-q2WgDQIkeC0kjmPg8J-x8hFBCTJ0rnt4wTPo
+Content-Type: application/json
+# Authorization-Global: Bearer {{token}}
+
+
+{
+  "username": "seller1",
+  "password": "sellerpass"
+}
+
+
+### Inscription vendeur
+POST http://localhost:3000/auth/seller/register
+Content-Type: application/json
+Authorization-Global: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJPbmxpbmUgSldUIEJ1aWxkZXIiLCJpYXQiOjE3NDU4NTgzNjIsImV4cCI6MTc3NzM5NDM2MiwiYXVkIjoid3d3LmV4YW1wbGUuY29tIiwic3ViIjoianJvY2tldEBleGFtcGxlLmNvbSIsIkdpdmVuTmFtZSI6IkpvaG5ueSIsIlN1cm5hbWUiOiJSb2NrZXQiLCJFbWFpbCI6Impyb2NrZXRAZXhhbXBsZS5jb20iLCJSb2xlIjpbIk1hbmFnZXIiLCJQcm9qZWN0IEFkbWluaXN0cmF0b3IiXX0.vzyWI9vUpzcgkVpMS7dWkYNvAxVHJkHDIKM9WqfEq3g
+
+{
+  "email": "vendeur@example.com",
+  "password": "motdepasse",
+  "nom": "Dupont",
+  "prenoms": "Jean",
+  "telephone": "+123456789"
+}
