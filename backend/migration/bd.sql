@@ -76,6 +76,7 @@ CREATE TABLE payment_methods (
     id SERIAL PRIMARY KEY,
     country_id INTEGER REFERENCES countries(id) ON DELETE CASCADE,
     method VARCHAR(100) NOT NULL, -- ex: "Carte bancaire", "Orange Money", "MTN Mobile Money"
+    currency_id INTEGER REFERENCES currencies(id) ON DELETE RESTRICT,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(country_id, method)
@@ -160,6 +161,7 @@ CREATE TABLE transactions (
     -- Temporisation
     expires_at TIMESTAMP, -- Expiration après 10 minutes
     completed_at TIMESTAMP, -- Date de complétion
+    cancelled_at TIMESTAMP,
     
     -- Audit
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

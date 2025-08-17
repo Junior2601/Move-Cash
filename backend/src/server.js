@@ -13,6 +13,7 @@ import rateRoutes from './routes/rate.routes.js';
 import paymentMethodRoutes from "./routes/paymentMethod.routes.js";
 import authorizedNumberRoutes from "./routes/authorizedNumber.routes.js";
 import balanceRoutes from "./routes/balance.routes.js";
+import transactionRoutes from "./routes/transaction.routes.js";
 
 
 dotenv.config();
@@ -32,7 +33,11 @@ app.use('/api/currency', currencyRoutes);
 app.use('/api/rate', rateRoutes);
 app.use('/api/payment_method',paymentMethodRoutes);
 app.use('/api/numero_autorise', authorizedNumberRoutes);
-app.use('api/balance', balanceRoutes);
+app.use('/api/balance', balanceRoutes);
+
+
+// Routes publics
+app.use('/api/transactions', transactionRoutes);
 
 // Test route pour vérifier que le backend fonctionne
 app.get('/', (req, res) => {
