@@ -14,6 +14,8 @@ import paymentMethodRoutes from "./routes/paymentMethod.routes.js";
 import authorizedNumberRoutes from "./routes/authorizedNumber.routes.js";
 import balanceRoutes from "./routes/balance.routes.js";
 import transactionRoutes from "./routes/transaction.routes.js";
+import gainRoutes from "./routes/gain.routes.js";
+import historyRoutes from './routes/history.routes.js';
 
 
 dotenv.config();
@@ -34,6 +36,8 @@ app.use('/api/rate', rateRoutes);
 app.use('/api/payment_method',paymentMethodRoutes);
 app.use('/api/numero_autorise', authorizedNumberRoutes);
 app.use('/api/balance', balanceRoutes);
+app.use('/api/gain', gainRoutes);
+app.use('/api/history', historyRoutes);
 
 
 // Routes publics

@@ -4,7 +4,10 @@ import {
   validateTransactionController,
   cancelTransactionController,
   getTransactionByIdController,
-  getTransactionByTrackingCodeController
+  getTransactionByTrackingCodeController,
+  redirectTransactionController,
+  acceptRedirectionController,
+  rejectRedirectionController,
 } from '../controllers/transaction.controller.js';
 
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
@@ -27,5 +30,14 @@ router.put('/:id/validate-agent', verifyAgentToken, validateTransactionControlle
 // Annuler transaction
 router.put('/:id/cancel', verifyAdminToken, cancelTransactionController);
 router.put('/:id/cancel-agent', verifyAgentToken, cancelTransactionController);
+
+// Un agent initie une redirection
+router.post('/:id/redirect', verifyAgentToken, redirectTransactionController);
+
+// L’agent destinataire accepte la redirection
+router.put('/redirections/:id/accept', verifyAgentToken, acceptRedirectionController);
+
+// L’agent destinataire rejette la redirection
+router.put('/redirections/:id/reject', verifyAgentToken, rejectRedirectionController);
 
 export default router;

@@ -11,9 +11,9 @@ router.get('/', verifyAdminToken, getAllGains);
 router.get('/agent/:agent_id', verifyAgentToken, getGainsByAgent);
 
 //  Admin : ajouter un gain
-router.post('/', verifyAdminToken, addGain);
+// router.post('/', verifyAdminToken, addGain);
 
 //  Admin : supprimer un gain
-router.delete('/:id', verifyAdminToken, removeGain);
+// router.delete('/:id', verifyAdminToken, removeGain);
 
 export default router;

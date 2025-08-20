@@ -25,11 +25,11 @@ export const findAllPaymentMethods = async () => {
 };
 
 // Créer un moyen de paiement
-export const createPaymentMethod = async (country_id, method) => {
+export const createPaymentMethod = async (country_id, method, currency_id) => {
   const result = await pool.query(
-    `INSERT INTO payment_methods (country_id, method)
-     VALUES ($1, $2) RETURNING *`,
-    [country_id, method]
+    `INSERT INTO payment_methods (country_id, method, currency_id)
+     VALUES ($1, $2, $3) RETURNING *`,
+    [country_id, method, currency_id]
   );
   return result.rows[0];
 };

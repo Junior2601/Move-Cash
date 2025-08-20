@@ -43,3 +43,4 @@ export const deleteGain = async (id) => {
   const result = await pool.query(`DELETE FROM gains WHERE id = $1 RETURNING *`, [id]);
   return result.rows[0];
 };
+
