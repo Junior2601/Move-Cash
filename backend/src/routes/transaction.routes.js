@@ -8,6 +8,8 @@ import {
   redirectTransactionController,
   acceptRedirectionController,
   rejectRedirectionController,
+  getAllTransactionsController,
+  getTransactionStatsController
 } from '../controllers/transaction.controller.js';
 
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
@@ -19,25 +21,32 @@ const router = express.Router();
 router.post('/', createTransactionController);
 
 // Suivi (par ID ou tracking code)
-router.get('/:id', getTransactionByIdController);
-router.get('/tracking/:code', getTransactionByTrackingCodeController);
+router.get('/:transaction_id', getTransactionByIdController);
+router.get('/tracking/:tracking_code', getTransactionByTrackingCodeController);
 
 // ============= ADMIN / AGENT =============
+
+// Voir toutes les transactions (admin)
+router.get('/All-transactions', verifyAdminToken, getAllTransactionsController);
+
+// Voir les transactions par status
+router.get('/transactions/stats', verifyAdminToken, getTransactionStatsController);
+
 // Valider transaction
-router.put('/:id/validate', verifyAdminToken, validateTransactionController);
-router.put('/:id/validate-agent', verifyAgentToken, validateTransactionController);
+router.put('/:transaction_id/validate', verifyAdminToken, validateTransactionController);
+router.put('/:transaction_id/validate-agent', verifyAgentToken, validateTransactionController);
 
 // Annuler transaction
-router.put('/:id/cancel', verifyAdminToken, cancelTransactionController);
-router.put('/:id/cancel-agent', verifyAgentToken, cancelTransactionController);
+router.put('/:transaction_id/cancel', verifyAdminToken, cancelTransactionController);
+router.put('/:transaction_id/cancel-agent', verifyAgentToken, cancelTransactionController);
 
 // Un agent initie une redirection
-router.post('/:id/redirect', verifyAgentToken, redirectTransactionController);
+router.post('/:transaction_id/redirect', verifyAgentToken, redirectTransactionController);
 
 // L’agent destinataire accepte la redirection
-router.put('/redirections/:id/accept', verifyAgentToken, acceptRedirectionController);
+router.put('/redirections/:redirection_id/accept', verifyAgentToken, acceptRedirectionController);
 
 // L’agent destinataire rejette la redirection
-router.put('/redirections/:id/reject', verifyAgentToken, rejectRedirectionController);
+router.put('/redirections/:redirection_id/reject', verifyAgentToken, rejectRedirectionController);
 
 export default router;

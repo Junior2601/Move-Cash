@@ -10,7 +10,7 @@ import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middlewa
 const router = express.Router();
 
 // ⚠️ Important: placer /me AVANT /:id
-router.get('/me', verifyAgentToken, agentMyHistory);
+router.get('/me/:id', verifyAgentToken, agentMyHistory);
 
 // Admin-only
 router.get('/', verifyAdminToken, adminListHistory);

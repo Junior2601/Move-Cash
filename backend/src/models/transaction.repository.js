@@ -1,4 +1,5 @@
 import { pool } from '../config/db.js';
+import { logHistory } from './history.repository.js';
 
 // =========================
 // Création transaction (publique, client)
@@ -82,8 +83,27 @@ export const createTransaction = async ({
       ]
     );
 
+    const transaction = insertRes.rows[0];
+
+    // 🔎 Log de création de transaction
+    await logHistory({
+      action_type: 'transaction_created',
+      actor_type: 'client', // Le client crée la transaction
+      actor_id: null, // Pas d'ID client spécifique dans votre modèle actuel
+      entity_type: 'transaction',
+      entity_id: transaction.id,
+      description: `Transaction créée - Montant: ${send_amount}, Code: ${tracking_code}`,
+      metadata: { 
+        from_country_id, 
+        to_country_id, 
+        send_amount, 
+        receive_amount,
+        tracking_code
+      }
+    }, client);
+
     await client.query('COMMIT');
-    return insertRes.rows[0];
+    return transaction;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -95,15 +115,33 @@ export const createTransaction = async ({
 // =========================
 // Vérifier expiration transaction
 // =========================
-const checkAndExpireTransaction = async (trx) => {
+const checkAndExpireTransaction = async (trx, client = pool) => {
   if (trx.status === 'en_attente' && new Date() > new Date(trx.expires_at)) {
-    await pool.query(
+    const { rows } = await client.query(
       `UPDATE transactions 
        SET status = 'expiree', updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+       RETURNING *`,
       [trx.id]
     );
-    return { ...trx, status: 'expiree' };
+    
+    const expiredTrx = rows[0];
+    
+    // 🔎 Log d'expiration automatique
+    await logHistory({
+      action_type: 'transaction_expired',
+      actor_type: 'system', // Expiration automatique par le système
+      actor_id: null,
+      entity_type: 'transaction',
+      entity_id: trx.id,
+      description: `Transaction expirée automatiquement - Code: ${trx.tracking_code}`,
+      metadata: { 
+        original_status: trx.status,
+        expires_at: trx.expires_at
+      }
+    }, client);
+
+    return expiredTrx;
   }
   return trx;
 };
@@ -111,7 +149,7 @@ const checkAndExpireTransaction = async (trx) => {
 // =========================
 // Valider une transaction
 // =========================
-export const validateTransaction = async (transaction_id) => {
+export const validateTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -125,7 +163,7 @@ export const validateTransaction = async (transaction_id) => {
     let trx = trxRes.rows[0];
 
     // Vérifier si expirée
-    trx = await checkAndExpireTransaction(trx);
+    trx = await checkAndExpireTransaction(trx, client);
     if (trx.status !== 'en_attente') throw new Error(`Transaction déjà traitée ou ${trx.status}`);
 
     // Marquer comme validée
@@ -153,7 +191,7 @@ export const validateTransaction = async (transaction_id) => {
       [transaction_id, trx.assigned_agent_id, currency_id, gain_amount, trx.commission_applied]
     );
 
-    // Créditer la balance de l’agent
+    // Créditer la balance de l'agent
     await client.query(
       `INSERT INTO balances (agent_id, currency_id, amount)
        VALUES ($1, $2, $3)
@@ -161,6 +199,21 @@ export const validateTransaction = async (transaction_id) => {
        DO UPDATE SET amount = balances.amount + $3`,
       [trx.assigned_agent_id, currency_id, trx.send_amount]
     );
+
+    // 🔎 Log de validation de transaction
+    await logHistory({
+      action_type: 'transaction_validated',
+      actor_type: actor.role, // 'admin' ou 'agent'
+      actor_id: actor.id,
+      entity_type: 'transaction',
+      entity_id: transaction_id,
+      description: `Transaction validée - Montant: ${trx.send_amount}, Code: ${trx.tracking_code}`,
+      metadata: { 
+        agent_id: trx.assigned_agent_id,
+        gain_amount,
+        commission_percent: trx.commission_applied
+      }
+    }, client);
 
     await client.query('COMMIT');
     return { message: 'Transaction validée avec succès' };
@@ -175,14 +228,43 @@ export const validateTransaction = async (transaction_id) => {
 // =========================
 // Annuler une transaction
 // =========================
-export const cancelTransaction = async (transaction_id) => {
-  const { rowCount } = await pool.query(
-    `UPDATE transactions SET status = 'echouee', cancelled_at = NOW(), updated_at = NOW()
-     WHERE id = $1 AND status = 'en_attente'`,
-    [transaction_id]
-  );
-  if (rowCount === 0) throw new Error('Transaction introuvable ou déjà traitée');
-  return { message: 'Transaction annulée avec succès' };
+export const cancelTransaction = async (transaction_id, actor) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `UPDATE transactions SET status = 'echouee', cancelled_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status = 'en_attente'
+       RETURNING *`,
+      [transaction_id]
+    );
+    
+    if (rows.length === 0) throw new Error('Transaction introuvable ou déjà traitée');
+    const transaction = rows[0];
+
+    // 🔎 Log d'annulation de transaction
+    await logHistory({
+      action_type: 'transaction_cancelled',
+      actor_type: actor.role, // 'admin' ou 'agent'
+      actor_id: actor.id,
+      entity_type: 'transaction',
+      entity_id: transaction_id,
+      description: `Transaction annulée - Code: ${transaction.tracking_code}`,
+      metadata: { 
+        original_status: 'en_attente',
+        cancelled_by: actor.id
+      }
+    }, client);
+
+    await client.query('COMMIT');
+    return { message: 'Transaction annulée avec succès' };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 // =========================
@@ -200,13 +282,16 @@ export const findTransactionByTrackingCode = async (code) => {
   return checkAndExpireTransaction(rows[0]);
 };
 
-// Un agent initie une redirection
+// =========================
+// Redirection de transaction
+// =========================
 export const redirectTransaction = async ({
   transaction_id,
   from_agent_id,
   to_agent_id,
   redirected_amount,
   reason,
+  actor // Ajout de l'acteur pour le log
 }) => {
   const client = await pool.connect();
   try {
@@ -239,8 +324,37 @@ export const redirectTransaction = async ({
       [transaction_id, from_agent_id, to_agent_id, redirected_amount, reason]
     );
 
+    const redirection = redirRows[0];
+
+    // 🔎 Log de redirection
+    await logHistory({
+      action_type: 'transaction_redirected',
+      actor_type: actor.role, // 'agent'
+      actor_id: actor.id,
+      entity_type: 'transaction',
+      entity_id: transaction_id,
+      description: `Transaction redirigée de l'agent ${from_agent_id} vers l'agent ${to_agent_id}`,
+      metadata: { 
+        redirection_id: redirection.id,
+        redirected_amount,
+        reason,
+        currency_id
+      }
+    }, client);
+
+    // Récupérer l’email de l’agent
+    const agentRes = await client.query(
+      `SELECT email FROM agents WHERE id = $1`,
+      [transaction.assigned_agent_id]
+    );
+    const agent = agentRes.rows[0];
+
+    if (agent) {
+      await notifyAgentForTransaction(agent.email, transaction);
+    }
+
     await client.query('COMMIT');
-    return redirRows[0];
+    return redirection;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -249,8 +363,10 @@ export const redirectTransaction = async ({
   }
 };
 
-// L’agent destinataire accepte la redirection
-export const acceptRedirection = async (redirection_id, agent_id) => {
+// =========================
+// Accepter une redirection
+// =========================
+export const acceptRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -325,8 +441,26 @@ export const acceptRedirection = async (redirection_id, agent_id) => {
       [redirection_id]
     );
 
+    const acceptedRedirection = updated[0];
+
+    // 🔎 Log d'acceptation de redirection
+    await logHistory({
+      action_type: 'redirection_accepted',
+      actor_type: actor.role, // 'agent'
+      actor_id: actor.id,
+      entity_type: 'redirection',
+      entity_id: redirection_id,
+      description: `Redirection acceptée par l'agent ${agent_id}`,
+      metadata: { 
+        transaction_id: trx.id,
+        from_agent_id: redir.from_agent_id,
+        to_agent_id: redir.to_agent_id,
+        redirected_amount: redir.redirected_amount
+      }
+    }, client);
+
     await client.query('COMMIT');
-    return updated[0];
+    return acceptedRedirection;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -335,15 +469,45 @@ export const acceptRedirection = async (redirection_id, agent_id) => {
   }
 };
 
-// L’agent destinataire rejette la redirection
-export const rejectRedirection = async (redirection_id, agent_id) => {
-  const { rows } = await pool.query(
-    `UPDATE redirections
-     SET status = 'rejected', processed_at = NOW()
-     WHERE id = $1 AND to_agent_id = $2 AND status = 'pending'
-     RETURNING *`,
-    [redirection_id, agent_id]
-  );
-  if (!rows.length) throw new Error('Redirection introuvable ou déjà traitée');
-  return rows[0];
+// =========================
+// Rejeter une redirection
+// =========================
+export const rejectRedirection = async (redirection_id, agent_id, actor) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `UPDATE redirections
+       SET status = 'rejected', processed_at = NOW()
+       WHERE id = $1 AND to_agent_id = $2 AND status = 'pending'
+       RETURNING *`,
+      [redirection_id, agent_id]
+    );
+    
+    if (!rows.length) throw new Error('Redirection introuvable ou déjà traitée');
+    const rejectedRedirection = rows[0];
+
+    // 🔎 Log de rejet de redirection
+    await logHistory({
+      action_type: 'redirection_rejected',
+      actor_type: actor.role, // 'agent'
+      actor_id: actor.id,
+      entity_type: 'redirection',
+      entity_id: redirection_id,
+      description: `Redirection rejetée par l'agent ${agent_id}`,
+      metadata: { 
+        transaction_id: rejectedRedirection.transaction_id,
+        reason: 'Rejeté par le destinataire'
+      }
+    }, client);
+
+    await client.query('COMMIT');
+    return rejectedRedirection;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 };
