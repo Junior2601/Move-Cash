@@ -1,5 +1,8 @@
 import { 
-  createTransaction, 
+  createTransaction,
+  findAllTransactions,
+  getTransactionStats,
+  clientValidateTransaction,
   validateTransaction, 
   cancelTransaction, 
   findTransactionById, 
@@ -8,6 +11,7 @@ import {
   acceptRedirection,
   rejectRedirection
 } from '../models/transaction.repository.js';
+
 
 // =========================
 // Créer une transaction (Client)
@@ -61,6 +65,18 @@ export const createTransactionController = async (req, res) => {
       success: false,
       message: error.message || 'Erreur lors de la création de la transaction'
     });
+  }
+};
+
+// =========================
+// Valider une transaction (client)
+// =========================
+export const clientValidateTransactionController = async (req, res) => {
+  try {
+    const result = await clientValidateTransaction(req.params.id);
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 };
 
@@ -368,28 +384,147 @@ export const rejectRedirectionController = async (req, res) => {
 // =========================
 export const getAllTransactionsController = async (req, res) => {
   try {
-    // Implémentation basique - à adapter selon votre modèle
-    const { rows } = await pool.query(`
-      SELECT t.*, 
-             c1.name as from_country_name,
-             c2.name as to_country_name,
-             a.name as agent_name
-      FROM transactions t
-      LEFT JOIN countries c1 ON t.from_country_id = c1.id
-      LEFT JOIN countries c2 ON t.to_country_id = c2.id
-      LEFT JOIN agents a ON t.assigned_agent_id = a.id
-      ORDER BY t.created_at DESC
-    `);
+    console.log('📋 Query params received:', req.query);
+
+    // Extraction et validation des paramètres
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      agent_id,
+      from_country_id,
+      to_country_id,
+      start_date,
+      end_date
+    } = req.query;
+
+    // Validation des paramètres numériques
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre page doit être un nombre positif'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
+      });
+    }
+
+    // Validation du statut
+    const validStatuses = ['en_attente', 'effectuee', 'echouee', 'expiree'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Statut invalide. Les statuts valides sont: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // Appeler la fonction du repository
+    const result = await findAllTransactions({
+      page: pageNum,
+      limit: limitNum,
+      status: status || null,
+      agent_id: agent_id || null,
+      from_country_id: from_country_id || null,
+      to_country_id: to_country_id || null,
+      start_date: start_date || null,
+      end_date: end_date || null
+    });
+
+    // Réponse réussie
+    res.json({
+      success: true,
+      message: 'Transactions récupérées avec succès',
+      data: result.transactions,
+      pagination: result.pagination
+    });
+
+  } catch (error) {
+    console.error('❌ Error in getAllTransactionsController:', error);
+    
+    // Gérer les erreurs spécifiques
+    if (error.message.includes('invalid input syntax')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Paramètre de requête invalide'
+      });
+    }
+
+    // Erreur générale
+    res.status(500).json({
+      success: false,
+      message: 'Erreur interne du serveur lors de la récupération des transactions',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+
+// =========================
+// Obtenir les transactions d'un agent
+// =========================
+export const getAgentTransactionsController = async (req, res) => {
+  try {
+    const { agent_id } = req.params;
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      start_date,
+      end_date
+    } = req.query;
+
+    // Valider l'ID de l'agent
+    const agentIdNum = parseInt(agent_id);
+    if (isNaN(agentIdNum)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID d\'agent invalide'
+      });
+    }
+
+    // Convertir les paramètres numériques
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre page doit être un nombre positif'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
+      });
+    }
+
+    const result = await findTransactionsByAgent(agentIdNum, {
+      page: pageNum,
+      limit: limitNum,
+      status,
+      start_date,
+      end_date
+    });
 
     res.json({
       success: true,
-      data: rows
+      data: result.transactions,
+      pagination: result.pagination
     });
   } catch (error) {
-    console.error('Erreur liste transactions:', error);
+    console.error('Erreur transactions agent:', error);
     res.status(500).json({
       success: false,
-      message: 'Erreur lors de la récupération des transactions'
+      message: 'Erreur lors de la récupération des transactions de l\'agent'
     });
   }
 };
@@ -399,21 +534,25 @@ export const getAllTransactionsController = async (req, res) => {
 // =========================
 export const getTransactionStatsController = async (req, res) => {
   try {
-    const stats = await pool.query(`
-      SELECT 
-        COUNT(*) as total_transactions,
-        COUNT(*) FILTER (WHERE status = 'effectuee') as completed,
-        COUNT(*) FILTER (WHERE status = 'en_attente') as pending,
-        COUNT(*) FILTER (WHERE status = 'echouee') as failed,
-        COUNT(*) FILTER (WHERE status = 'expiree') as expired,
-        SUM(send_amount) as total_amount_sent,
-        SUM(receive_amount) as total_amount_received
-      FROM transactions
-    `);
+    const {
+      agent_id,
+      from_country_id,
+      to_country_id,
+      start_date,
+      end_date
+    } = req.query;
+
+    const stats = await getTransactionStats({
+      agent_id: agent_id ? parseInt(agent_id) : null,
+      from_country_id: from_country_id ? parseInt(from_country_id) : null,
+      to_country_id: to_country_id ? parseInt(to_country_id) : null,
+      start_date,
+      end_date
+    });
 
     res.json({
       success: true,
-      data: stats.rows[0]
+      data: stats
     });
   } catch (error) {
     console.error('Erreur stats transactions:', error);

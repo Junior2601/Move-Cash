@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { registerAdmin, loginAdmin } from '../controllers/admin.controller.js';
+import { registerAdmin, loginAdmin, getAdminProfile  } from '../controllers/admin.controller.js';
 import { body } from 'express-validator';
-
+import { verifyAdminToken } from '../middlewares/auth.middleware.js'; 
 const router = Router();
 
 // Route inscription admin
@@ -24,5 +24,7 @@ router.post(
   ],
   loginAdmin
 );
+
+router.get('/profile', verifyAdminToken, getAdminProfile);
 
 export default router;

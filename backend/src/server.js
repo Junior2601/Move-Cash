@@ -3,6 +3,8 @@ import express from 'express';
 import { pool } from './config/db.js';
 import cors from 'cors';
 import morgan from 'morgan';
+import { cleanupService } from './services/cleanup.service.js';
+
 
 // Routes
 import adminRoutes from './routes/admin.routes.js';
@@ -16,7 +18,7 @@ import balanceRoutes from "./routes/balance.routes.js";
 import transactionRoutes from "./routes/transaction.routes.js";
 import gainRoutes from "./routes/gain.routes.js";
 import historyRoutes from './routes/history.routes.js';
-
+import cleanupRoutes from './routes/cleanup.routes.js';
 
 dotenv.config();
 
@@ -38,10 +40,17 @@ app.use('/api/numero_autorise', authorizedNumberRoutes);
 app.use('/api/balance', balanceRoutes);
 app.use('/api/gain', gainRoutes);
 app.use('/api/history', historyRoutes);
+app.use('/api/admin', cleanupRoutes); // Protégez cette route avec une authentification admin!
 
 
 // Routes publics
 app.use('/api/transactions', transactionRoutes);
+
+
+// Démarrer le service
+cleanupService.start(5); // 5 minutes
+// Pour tester immédiatement :
+cleanupService.runCleanup().then(console.log);
 
 // Test route pour vérifier que le backend fonctionne
 app.get('/', (req, res) => {

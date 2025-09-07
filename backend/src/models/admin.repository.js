@@ -17,3 +17,10 @@ export const createAdmin = async ({ email, hashedPassword, name }) => {
   const { rows } = await pool.query(query, [email, hashedPassword, name]);
   return rows[0];
 };
+
+// Récupérer un admin par ID (sans le mot de passe)
+export const getAdminById = async (id) => {
+  const query = 'SELECT id, email, name, is_active, created_at FROM admins WHERE id = $1 LIMIT 1';
+  const { rows } = await pool.query(query, [id]);
+  return rows[0];
+};

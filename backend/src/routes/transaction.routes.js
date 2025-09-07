@@ -1,6 +1,8 @@
 import express from 'express';
+import { pool } from '../config/db.js';
 import {
   createTransactionController,
+  clientValidateTransactionController,
   validateTransactionController,
   cancelTransactionController,
   getTransactionByIdController,
@@ -13,6 +15,7 @@ import {
 } from '../controllers/transaction.controller.js';
 
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
+import { debugDatabase } from '../middlewares/debug.middleware.js';
 
 const router = express.Router();
 
@@ -20,17 +23,22 @@ const router = express.Router();
 // Créer une transaction
 router.post('/', createTransactionController);
 
+
+
+// Voir toutes les transactions (admin)
+router.get('/all-transactions',debugDatabase, verifyAdminToken, getAllTransactionsController);
+
+// Voir les transactions par status
+router.get('/stats', verifyAdminToken, getTransactionStatsController);
+
+// validation par le client
+router.post('/:id/client-validate', clientValidateTransactionController);
+
 // Suivi (par ID ou tracking code)
 router.get('/:transaction_id', getTransactionByIdController);
 router.get('/tracking/:tracking_code', getTransactionByTrackingCodeController);
 
 // ============= ADMIN / AGENT =============
-
-// Voir toutes les transactions (admin)
-router.get('/All-transactions', verifyAdminToken, getAllTransactionsController);
-
-// Voir les transactions par status
-router.get('/transactions/stats', verifyAdminToken, getTransactionStatsController);
 
 // Valider transaction
 router.put('/:transaction_id/validate', verifyAdminToken, validateTransactionController);

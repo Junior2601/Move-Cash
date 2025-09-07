@@ -1,5 +1,10 @@
 import { pool } from '../config/db.js';
 import { logHistory } from './history.repository.js';
+import { 
+  notifyAgentForTransaction, 
+  notifyAgentForRedirection, 
+  notifyAgentRedirectionStatus 
+} from "../services/email.service.js";
 
 // =========================
 // Création transaction (publique, client)
@@ -56,7 +61,7 @@ export const createTransaction = async ({
     const commission_applied = 5;
 
     // 6. Expiration après 10 minutes
-    const expires_at = new Date(Date.now() + 10 * 60 * 1000);
+    // const expires_at = new Date(Date.now() + 10 * 60 * 1000);
 
     // 7. Insérer transaction
     const insertRes = await client.query(
@@ -68,8 +73,9 @@ export const createTransaction = async ({
         send_amount, receive_amount,
         rate_applied, commission_applied,
         status, assigned_agent_id, authorized_number_id,
-        expires_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'en_attente',$12,$13,$14)
+        expires_at,
+        client_validated
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW() + INTERVAL '10 minutes',$15)
       RETURNING *`,
       [
         tracking_code,
@@ -78,8 +84,10 @@ export const createTransaction = async ({
         sender_method_id, receiver_method_id,
         send_amount, receive_amount,
         rate_applied, commission_applied,
+        'en_attente', // Statut directement dans les valeurs
         assigned_agent_id, authorized_number_id,
-        expires_at
+        // expires_at,
+        false
       ]
     );
 
@@ -88,8 +96,8 @@ export const createTransaction = async ({
     // 🔎 Log de création de transaction
     await logHistory({
       action_type: 'transaction_created',
-      actor_type: 'client', // Le client crée la transaction
-      actor_id: null, // Pas d'ID client spécifique dans votre modèle actuel
+      actor_type: 'client',
+      actor_id: null,
       entity_type: 'transaction',
       entity_id: transaction.id,
       description: `Transaction créée - Montant: ${send_amount}, Code: ${tracking_code}`,
@@ -101,6 +109,46 @@ export const createTransaction = async ({
         tracking_code
       }
     }, client);
+
+    // Récupérer l'email de l'agent
+    const agentRes = await client.query(
+      `SELECT email, name FROM agents WHERE id = $1`,
+      [transaction.assigned_agent_id]
+    );
+    const agent = agentRes.rows[0];
+
+    if (agent) {
+      // Récupérer les noms des pays pour l'email et la devise
+      const countriesRes = await client.query(
+        `SELECT 
+            c.id, 
+            c.name AS country_name,
+            curr.code AS currency_code
+        FROM countries c
+        INNER JOIN currencies curr ON c.currency_id = curr.id
+        WHERE c.id IN ($1, $2)`,
+        [from_country_id, to_country_id]
+      );
+
+      const countries = {};
+      countriesRes.rows.forEach(country => {
+        // On stocke maintenant PLUS d'infos pour chaque pays
+        countries[country.id] = {
+          name: country.country_name,
+          currency_code: country.currency_code // On ajoute le code de la devise
+        };
+      });
+
+      const transactionWithDetails = {
+        ...transaction,
+        from_country_name: countries[from_country_id]?.name, // Utilisation safe avec '?.'
+        to_country_name: countries[to_country_id]?.name,
+        // On ajoute la devise récupérée au niveau de la transaction
+        currency: countries[from_country_id]?.currency_code 
+      };
+
+      await notifyAgentForTransaction(agent.email, transactionWithDetails);
+    }
 
     await client.query('COMMIT');
     return transaction;
@@ -116,38 +164,112 @@ export const createTransaction = async ({
 // Vérifier expiration transaction
 // =========================
 const checkAndExpireTransaction = async (trx, client = pool) => {
-  if (trx.status === 'en_attente' && new Date() > new Date(trx.expires_at)) {
+  const now = new Date();
+  const expiresAt = new Date(trx.expires_at);
+  
+  // Utilisation de l'opérateur de coalescence nulle pour gérer les valeurs null/undefined
+  const isClientValidated = trx.client_validated ?? false;
+  
+  // console.log('Checking transaction expiration:', {
+  //   id: trx.id,
+  //   status: trx.status,
+  //   client_validated: trx.client_validated,
+  //   isClientValidated,
+  //   expiresAt,
+  //   now,
+  //   shouldExpire: trx.status === 'en_attente' && now > expiresAt && !isClientValidated
+  // });
+  
+  // Ne pas expirer si validée par le client OU si le statut n'est plus "en_attente"
+  if (trx.status === 'en_attente' && now > expiresAt && !isClientValidated) {
+    console.log('Expiring transaction:', trx.id);
+    
     const { rows } = await client.query(
       `UPDATE transactions 
        SET status = 'expiree', updated_at = NOW()
-       WHERE id = $1
+       WHERE id = $1 AND status = 'en_attente'
        RETURNING *`,
       [trx.id]
     );
     
-    const expiredTrx = rows[0];
-    
-    // 🔎 Log d'expiration automatique
-    await logHistory({
-      action_type: 'transaction_expired',
-      actor_type: 'system', // Expiration automatique par le système
-      actor_id: null,
-      entity_type: 'transaction',
-      entity_id: trx.id,
-      description: `Transaction expirée automatiquement - Code: ${trx.tracking_code}`,
-      metadata: { 
-        original_status: trx.status,
-        expires_at: trx.expires_at
-      }
-    }, client);
+    if (rows.length > 0) {
+      const expiredTrx = rows[0];
+      
+      await logHistory({
+        action_type: 'transaction_expired',
+        actor_type: 'system',
+        actor_id: null,
+        entity_type: 'transaction',
+        entity_id: trx.id,
+        description: `Transaction expirée automatiquement - Code: ${trx.tracking_code}`,
+        metadata: { 
+          original_status: trx.status,
+          expires_at: trx.expires_at,
+          expired_at: now
+        }
+      }, client);
 
-    return expiredTrx;
+      return expiredTrx;
+    }
   }
   return trx;
 };
 
 // =========================
-// Valider une transaction
+// Validation par le client
+// =========================
+export const clientValidateTransaction = async (transaction_id) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Récupérer la transaction
+    const trxRes = await client.query(
+      `SELECT * FROM transactions WHERE id = $1 FOR UPDATE`,
+      [transaction_id]
+    );
+    if (trxRes.rows.length === 0) throw new Error('Transaction introuvable');
+    let trx = trxRes.rows[0];
+
+    // Vérifier si déjà expirée ou traitée
+    if (trx.status !== 'en_attente') {
+      throw new Error(`Transaction déjà traitée ou ${trx.status}`);
+    }
+
+    // Marquer comme validée par le client
+    await client.query(
+      `UPDATE transactions 
+       SET client_validated = true, client_validated_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [transaction_id]
+    );
+
+    // 🔎 Log de validation client
+    await logHistory({
+      action_type: 'client_validation',
+      actor_type: 'client',
+      actor_id: null,
+      entity_type: 'transaction',
+      entity_id: transaction_id,
+      description: `Transaction validée par le client - Code: ${trx.tracking_code}`,
+      metadata: { 
+        tracking_code: trx.tracking_code,
+        send_amount: trx.send_amount
+      }
+    }, client);
+
+    await client.query('COMMIT');
+    return { message: 'Transaction validée par le client avec succès' };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// =========================
+// Valider une transaction agent ou admin
 // =========================
 export const validateTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
@@ -162,9 +284,13 @@ export const validateTransaction = async (transaction_id, actor) => {
     if (trxRes.rows.length === 0) throw new Error('Transaction introuvable');
     let trx = trxRes.rows[0];
 
-    // Vérifier si expirée
-    trx = await checkAndExpireTransaction(trx, client);
-    if (trx.status !== 'en_attente') throw new Error(`Transaction déjà traitée ou ${trx.status}`);
+    // Vérifier si expirée (seulement si pas validée par le client)
+    if (!trx.client_validated) {
+      trx = await checkAndExpireTransaction(trx, client);
+    }
+    
+    if (trx.status !== 'en_attente') throw new Error(`Transaction déjà traitée ou ${trx.status}
+    `);
 
     // Marquer comme validée
     await client.query(
@@ -203,7 +329,7 @@ export const validateTransaction = async (transaction_id, actor) => {
     // 🔎 Log de validation de transaction
     await logHistory({
       action_type: 'transaction_validated',
-      actor_type: actor.role, // 'admin' ou 'agent'
+      actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
@@ -246,7 +372,7 @@ export const cancelTransaction = async (transaction_id, actor) => {
     // 🔎 Log d'annulation de transaction
     await logHistory({
       action_type: 'transaction_cancelled',
-      actor_type: actor.role, // 'admin' ou 'agent'
+      actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
@@ -270,16 +396,441 @@ export const cancelTransaction = async (transaction_id, actor) => {
 // =========================
 // Récupération avec expiration automatique
 // =========================
-export const findTransactionById = async (id) => {
-  const { rows } = await pool.query(`SELECT * FROM transactions WHERE id = $1`, [id]);
-  if (rows.length === 0) return null;
-  return checkAndExpireTransaction(rows[0]);
+export const findTransactionById = async (transaction_id) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { rows } = await client.query(
+      `SELECT *, client_validated FROM transactions WHERE id = $1 FOR UPDATE`,
+      [transaction_id]
+    );
+    
+    if (rows.length === 0) {
+      await client.query('COMMIT');
+      return null;
+    }
+    
+    const transaction = rows[0];
+    const updatedTransaction = await checkAndExpireTransaction(transaction, client);
+    
+    await client.query('COMMIT');
+    return updatedTransaction;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
-export const findTransactionByTrackingCode = async (code) => {
-  const { rows } = await pool.query(`SELECT * FROM transactions WHERE tracking_code = $1`, [code]);
-  if (rows.length === 0) return null;
-  return checkAndExpireTransaction(rows[0]);
+export const findTransactionByTrackingCode = async (tracking_code) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    const { rows } = await client.query(
+      `SELECT *, client_validated FROM transactions WHERE tracking_code = $1 FOR UPDATE`,
+      [tracking_code]
+    );
+    
+    if (rows.length === 0) {
+      await client.query('COMMIT');
+      return null;
+    }
+    
+    const transaction = rows[0];
+    const updatedTransaction = await checkAndExpireTransaction(transaction, client);
+    
+    await client.query('COMMIT');
+    return updatedTransaction;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// =========================
+// Récupérer toutes les transactions (avec pagination et filtres)
+// =========================
+export const findAllTransactions = async ({
+  page = 1,
+  limit = 10,
+  status = null,
+  agent_id = null,
+  from_country_id = null,
+  to_country_id = null,
+  start_date = null,
+  end_date = null
+} = {}) => {
+  const client = await pool.connect();
+  try {
+    console.log('🔍 Filters received:', {
+      page, limit, status, agent_id, from_country_id, to_country_id, start_date, end_date
+    });
+
+    // Conversion et validation des paramètres
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+    const offset = (pageNum - 1) * limitNum;
+    
+    // Construire la requête de base
+    let query = `
+      SELECT 
+        t.*,
+        fc.name as from_country_name,
+        tc.name as to_country_name,
+        sm.method as sender_method_name,
+        rm.method as receiver_method_name,
+        a.name as agent_name,
+        a.email as agent_email
+      FROM transactions t
+      LEFT JOIN countries fc ON t.from_country_id = fc.id
+      LEFT JOIN countries tc ON t.to_country_id = tc.id
+      LEFT JOIN payment_methods sm ON t.sender_method_id = sm.id
+      LEFT JOIN payment_methods rm ON t.receiver_method_id = rm.id
+      LEFT JOIN agents a ON t.assigned_agent_id = a.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    let paramCount = 0;
+
+    // Fonction helper pour vérifier les valeurs
+    const isValidParam = (value) => {
+      return value !== null && value !== undefined && value !== '' && value !== 'null' && value !== 'undefined';
+    };
+
+    // Ajouter les filtres conditionnels
+    if (isValidParam(status)) {
+      paramCount++;
+      query += ` AND t.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (isValidParam(agent_id)) {
+      const agentIdNum = typeof agent_id === 'string' ? parseInt(agent_id) : agent_id;
+      if (!isNaN(agentIdNum)) {
+        paramCount++;
+        query += ` AND t.assigned_agent_id = $${paramCount}`;
+        params.push(agentIdNum);
+      }
+    }
+
+    if (isValidParam(from_country_id)) {
+      const fromCountryIdNum = typeof from_country_id === 'string' ? parseInt(from_country_id) : from_country_id;
+      if (!isNaN(fromCountryIdNum)) {
+        paramCount++;
+        query += ` AND t.from_country_id = $${paramCount}`;
+        params.push(fromCountryIdNum);
+      }
+    }
+
+    if (isValidParam(to_country_id)) {
+      const toCountryIdNum = typeof to_country_id === 'string' ? parseInt(to_country_id) : to_country_id;
+      if (!isNaN(toCountryIdNum)) {
+        paramCount++;
+        query += ` AND t.to_country_id = $${paramCount}`;
+        params.push(toCountryIdNum);
+      }
+    }
+
+    if (isValidParam(start_date)) {
+      paramCount++;
+      query += ` AND DATE(t.created_at) >= $${paramCount}`;
+      params.push(start_date);
+    }
+
+    if (isValidParam(end_date)) {
+      paramCount++;
+      query += ` AND DATE(t.created_at) <= $${paramCount}`;
+      params.push(end_date);
+    }
+
+    // Ajouter l'ordre et la pagination
+    query += ` ORDER BY t.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(limitNum, offset);
+
+    console.log('📋 Final query:', query);
+    console.log('🔢 Query params:', params);
+
+    // Exécuter la requête
+    const { rows } = await client.query(query, params);
+    console.log(`✅ Found ${rows.length} transactions`);
+
+    // Récupérer le nombre total pour la pagination - REQUÊTE SIMPLIFIÉE
+    let countQuery = `SELECT COUNT(*) FROM transactions t WHERE 1=1`;
+    const countParams = [];
+    let countParamCount = 0;
+
+    // Mêmes filtres que la requête principale (sans les JOINs pour la count)
+    if (isValidParam(status)) {
+      countParamCount++;
+      countQuery += ` AND t.status = $${countParamCount}`;
+      countParams.push(status);
+    }
+
+    if (isValidParam(agent_id)) {
+      const agentIdNum = typeof agent_id === 'string' ? parseInt(agent_id) : agent_id;
+      if (!isNaN(agentIdNum)) {
+        countParamCount++;
+        countQuery += ` AND t.assigned_agent_id = $${countParamCount}`;
+        countParams.push(agentIdNum);
+      }
+    }
+
+    if (isValidParam(from_country_id)) {
+      const fromCountryIdNum = typeof from_country_id === 'string' ? parseInt(from_country_id) : from_country_id;
+      if (!isNaN(fromCountryIdNum)) {
+        countParamCount++;
+        countQuery += ` AND t.from_country_id = $${countParamCount}`;
+        countParams.push(fromCountryIdNum);
+      }
+    }
+
+    if (isValidParam(to_country_id)) {
+      const toCountryIdNum = typeof to_country_id === 'string' ? parseInt(to_country_id) : to_country_id;
+      if (!isNaN(toCountryIdNum)) {
+        countParamCount++;
+        countQuery += ` AND t.to_country_id = $${countParamCount}`;
+        countParams.push(toCountryIdNum);
+      }
+    }
+
+    if (isValidParam(start_date)) {
+      countParamCount++;
+      countQuery += ` AND DATE(t.created_at) >= $${countParamCount}`;
+      countParams.push(start_date);
+    }
+
+    if (isValidParam(end_date)) {
+      countParamCount++;
+      countQuery += ` AND DATE(t.created_at) <= $${countParamCount}`;
+      countParams.push(end_date);
+    }
+
+    const countResult = await client.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0].count);
+
+    // Formater les dates pour la réponse
+    const formattedTransactions = rows.map(transaction => ({
+      ...transaction,
+      created_at: transaction.created_at ? new Date(transaction.created_at).toISOString() : null,
+      updated_at: transaction.updated_at ? new Date(transaction.updated_at).toISOString() : null,
+      expires_at: transaction.expires_at ? new Date(transaction.expires_at).toISOString() : null,
+      completed_at: transaction.completed_at ? new Date(transaction.completed_at).toISOString() : null,
+      cancelled_at: transaction.cancelled_at ? new Date(transaction.cancelled_at).toISOString() : null,
+      client_validated_at: transaction.client_validated_at ? new Date(transaction.client_validated_at).toISOString() : null
+    }));
+
+    return {
+      transactions: formattedTransactions,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum)
+      }
+    };
+  } catch (err) {
+    console.error('❌ Error in findAllTransactions:', err);
+    console.error('Error stack:', err.stack);
+    throw new Error(`Erreur lors de la récupération des transactions: ${err.message}`);
+  } finally {
+    client.release();
+  }
+};
+
+// =========================
+// Récupérer les transactions d'un agent spécifique
+// =========================
+export const findTransactionsByAgent = async (agent_id, {
+  page = 1,
+  limit = 10,
+  status = null,
+  start_date = null,
+  end_date = null
+} = {}) => {
+  const client = await pool.connect();
+  try {
+    const offset = (page - 1) * limit;
+    
+    let query = `
+      SELECT 
+        t.*,
+        fc.name as from_country_name,
+        tc.name as to_country_name,
+        sm.name as sender_method_name,
+        rm.name as receiver_method_name
+      FROM transactions t
+      LEFT JOIN countries fc ON t.from_country_id = fc.id
+      LEFT JOIN countries tc ON t.to_country_id = tc.id
+      LEFT JOIN payment_methods sm ON t.sender_method_id = sm.id
+      LEFT JOIN payment_methods rm ON t.receiver_method_id = rm.id
+      WHERE t.assigned_agent_id = $1
+    `;
+    
+    const params = [agent_id];
+    let paramCount = 1;
+
+    if (status) {
+      paramCount++;
+      query += ` AND t.status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (start_date) {
+      paramCount++;
+      query += ` AND t.created_at >= $${paramCount}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      paramCount++;
+      query += ` AND t.created_at <= $${paramCount}`;
+      params.push(end_date);
+    }
+
+    query += ` ORDER BY t.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(limit, offset);
+
+    const { rows } = await client.query(query, params);
+
+    // Compter le total
+    let countQuery = `SELECT COUNT(*) FROM transactions WHERE assigned_agent_id = $1`;
+    const countParams = [agent_id];
+    let countParamCount = 1;
+
+    if (status) {
+      countParamCount++;
+      countQuery += ` AND status = $${countParamCount}`;
+      countParams.push(status);
+    }
+
+    if (start_date) {
+      countParamCount++;
+      countQuery += ` AND created_at >= $${countParamCount}`;
+      countParams.push(start_date);
+    }
+
+    if (end_date) {
+      countParamCount++;
+      countQuery += ` AND created_at <= $${countParamCount}`;
+      countParams.push(end_date);
+    }
+
+    const countResult = await client.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0].count);
+
+    return {
+      transactions: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  } catch (err) {
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// =========================
+// Récupérer les statistiques des transactions
+// =========================
+export const getTransactionStats = async (filters = {}) => {
+  const client = await pool.connect();
+  try {
+    const {
+      agent_id = null,
+      from_country_id = null,
+      to_country_id = null,
+      start_date = null,
+      end_date = null
+    } = filters;
+
+    let query = `
+      SELECT 
+        status,
+        COUNT(*) as count,
+        COALESCE(SUM(send_amount), 0) as total_send_amount,
+        COALESCE(SUM(receive_amount), 0) as total_receive_amount
+      FROM transactions
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    let paramCount = 0;
+
+    if (agent_id) {
+      paramCount++;
+      query += ` AND assigned_agent_id = $${paramCount}`;
+      params.push(agent_id);
+    }
+
+    if (from_country_id) {
+      paramCount++;
+      query += ` AND from_country_id = $${paramCount}`;
+      params.push(from_country_id);
+    }
+
+    if (to_country_id) {
+      paramCount++;
+      query += ` AND to_country_id = $${paramCount}`;
+      params.push(to_country_id);
+    }
+
+    if (start_date) {
+      paramCount++;
+      query += ` AND created_at >= $${paramCount}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      paramCount++;
+      query += ` AND created_at <= $${paramCount}`;
+      params.push(end_date);
+    }
+
+    query += ` GROUP BY status`;
+
+    const { rows } = await client.query(query, params);
+
+    // Calculer les totaux
+    const totals = {
+      total_transactions: 0,
+      total_send_amount: 0,
+      total_receive_amount: 0
+    };
+
+    const statsByStatus = {};
+    
+    rows.forEach(row => {
+      statsByStatus[row.status] = {
+        count: parseInt(row.count),
+        total_send_amount: parseFloat(row.total_send_amount),
+        total_receive_amount: parseFloat(row.total_receive_amount)
+      };
+      
+      totals.total_transactions += parseInt(row.count);
+      totals.total_send_amount += parseFloat(row.total_send_amount);
+      totals.total_receive_amount += parseFloat(row.total_receive_amount);
+    });
+
+    return {
+      by_status: statsByStatus,
+      totals
+    };
+  } catch (err) {
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 // =========================
@@ -291,7 +842,7 @@ export const redirectTransaction = async ({
   to_agent_id,
   redirected_amount,
   reason,
-  actor // Ajout de l'acteur pour le log
+  actor
 }) => {
   const client = await pool.connect();
   try {
@@ -305,22 +856,58 @@ export const redirectTransaction = async ({
     if (!trxRows.length) throw new Error('Transaction introuvable');
     const trx = trxRows[0];
 
-    if (trx.status === 'annulee') throw new Error('Impossible de rediriger une transaction annulée');
-    if (trx.assigned_agent_id !== from_agent_id) throw new Error("Cet agent n'est pas assigné à la transaction");
+    // Vérification complète du statut
+    if (!['en_attente', 'effectuee'].includes(trx.status)) {
+      throw new Error(`Impossible de rediriger une transaction avec le statut: ${trx.status}`);
+    }
 
-    // Vérifier la devise
-    const { rows: cr } = await client.query(
-      `SELECT currency_id FROM payment_methods WHERE id = $1`,
-      [trx.receiver_method_id]
+    // Vérifier que l'agent source est bien assigné
+    if (trx.assigned_agent_id !== from_agent_id) {
+      throw new Error("Cet agent n'est pas assigné à la transaction");
+    }
+
+    // Vérifier que l'agent destinataire existe et est actif
+    const toAgentCheck = await client.query(
+      `SELECT id, name, email FROM agents WHERE id = $1 AND is_active = true`,
+      [to_agent_id]
     );
-    if (!cr.length) throw new Error('Devise introuvable');
-    const currency_id = cr[0].currency_id;
+    if (toAgentCheck.rows.length === 0) {
+      throw new Error("L'agent destinataire n'existe pas ou est inactif");
+    }
 
-    // Insérer la redirection (statut pending)
+    // Vérifier le montant redirigé
+    if (redirected_amount <= 0 || redirected_amount > trx.send_amount) {
+      throw new Error("Montant redirigé invalide");
+    }
+
+    // Récupérer les informations détaillées pour l'email (CORRIGÉ)
+    const [countriesRes, methodsRes, fromAgentRes] = await Promise.all([
+      client.query(`SELECT id, name FROM countries WHERE id = ANY($1)`, [[trx.from_country_id, trx.to_country_id]]),
+      client.query(`SELECT id, name FROM payment_methods WHERE id = ANY($1)`, [[trx.sender_method_id, trx.receiver_method_id]]),
+      client.query(`SELECT name, email FROM agents WHERE id = $1`, [from_agent_id])
+    ]);
+
+    const countries = {};
+    countriesRes.rows.forEach(country => {
+      countries[country.id] = country.name;
+    });
+
+    const methods = {};
+    methodsRes.rows.forEach(method => {
+      methods[method.id] = method.name;
+    });
+
+    // Insérer la redirection
     const { rows: redirRows } = await client.query(
-      `INSERT INTO redirections (transaction_id, from_agent_id, to_agent_id, redirected_amount, reason, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')
-       RETURNING *`,
+      `INSERT INTO redirections (
+        transaction_id, 
+        from_agent_id, 
+        to_agent_id, 
+        redirected_amount, 
+        reason, 
+        status
+      ) VALUES ($1, $2, $3, $4, $5, 'pending')
+      RETURNING *`,
       [transaction_id, from_agent_id, to_agent_id, redirected_amount, reason]
     );
 
@@ -329,7 +916,7 @@ export const redirectTransaction = async ({
     // 🔎 Log de redirection
     await logHistory({
       action_type: 'transaction_redirected',
-      actor_type: actor.role, // 'agent'
+      actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
@@ -338,25 +925,39 @@ export const redirectTransaction = async ({
         redirection_id: redirection.id,
         redirected_amount,
         reason,
-        currency_id
+        from_agent_id,
+        to_agent_id,
+        transaction_status: trx.status
       }
     }, client);
 
-    // Récupérer l’email de l’agent
-    const agentRes = await client.query(
-      `SELECT email FROM agents WHERE id = $1`,
-      [transaction.assigned_agent_id]
-    );
-    const agent = agentRes.rows[0];
+    // Préparer les données pour l'email
+    const transactionWithDetails = {
+      ...trx,
+      from_country_name: countries[trx.from_country_id] || 'Inconnu',
+      to_country_name: countries[trx.to_country_id] || 'Inconnu',
+      sender_method_name: methods[trx.sender_method_id] || 'Inconnu',
+      receiver_method_name: methods[trx.receiver_method_id] || 'Inconnu'
+    };
 
-    if (agent) {
-      await notifyAgentForTransaction(agent.email, transaction);
-    }
+    const redirectionWithDetails = {
+      ...redirection,
+      from_agent_name: fromAgentRes.rows[0]?.name || `Agent #${from_agent_id}`,
+      transaction: transactionWithDetails
+    };
+
+    // Notifier l'agent destinataire
+    await notifyAgentForRedirection(
+      toAgentCheck.rows[0].email, 
+      redirectionWithDetails, 
+      transactionWithDetails
+    );
 
     await client.query('COMMIT');
     return redirection;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('Erreur redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -395,7 +996,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     );
     const currency_id = cr[0].currency_id;
 
-    const gain_amount = (trx.receive_amount * trx.commission_applied) / 100;
+    const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
 
     if (trx.status === 'effectuee') {
       // Retirer de l'ancien agent
@@ -446,7 +1047,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     // 🔎 Log d'acceptation de redirection
     await logHistory({
       action_type: 'redirection_accepted',
-      actor_type: actor.role, // 'agent'
+      actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'redirection',
       entity_id: redirection_id,
@@ -458,6 +1059,32 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
         redirected_amount: redir.redirected_amount
       }
     }, client);
+
+    // Notifier l'agent expéditeur de l'acceptation
+    const fromAgentRes = await client.query(
+      `SELECT email, name FROM agents WHERE id = $1`,
+      [redir.from_agent_id]
+    );
+    const fromAgent = fromAgentRes.rows[0];
+
+    if (fromAgent) {
+      const toAgentRes = await client.query(
+        `SELECT name FROM agents WHERE id = $1`,
+        [redir.to_agent_id]
+      );
+      
+      const redirectionWithDetails = {
+        ...acceptedRedirection,
+        to_agent_name: toAgentRes.rows[0]?.name || `Agent #${redir.to_agent_id}`
+      };
+
+      await notifyAgentRedirectionStatus(
+        fromAgent.email, 
+        redirectionWithDetails, 
+        trx, 
+        'accepted'
+      );
+    }
 
     await client.query('COMMIT');
     return acceptedRedirection;
@@ -491,7 +1118,7 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
     // 🔎 Log de rejet de redirection
     await logHistory({
       action_type: 'redirection_rejected',
-      actor_type: actor.role, // 'agent'
+      actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'redirection',
       entity_id: redirection_id,
@@ -502,6 +1129,38 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
       }
     }, client);
 
+    // Notifier l'agent expéditeur du rejet
+    const fromAgentRes = await client.query(
+      `SELECT email, name FROM agents WHERE id = $1`,
+      [rejectedRedirection.from_agent_id]
+    );
+    const fromAgent = fromAgentRes.rows[0];
+
+    if (fromAgent) {
+      const toAgentRes = await client.query(
+        `SELECT name FROM agents WHERE id = $1`,
+        [agent_id]
+      );
+
+      const redirectionWithDetails = {
+        ...rejectedRedirection,
+        to_agent_name: toAgentRes.rows[0]?.name || `Agent #${agent_id}`
+      };
+
+      const trxRes = await client.query(
+        `SELECT * FROM transactions WHERE id = $1`,
+        [rejectedRedirection.transaction_id]
+      );
+      const transaction = trxRes.rows[0];
+
+      await notifyAgentRedirectionStatus(
+        fromAgent.email, 
+        redirectionWithDetails, 
+        transaction, 
+        'rejected'
+      );
+    }
+
     await client.query('COMMIT');
     return rejectedRedirection;
   } catch (err) {
@@ -511,3 +1170,49 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
     client.release();
   }
 };
+
+// =========================
+// Service de nettoyage des transactions expirées
+// =========================
+export const expireOldTransactions = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // N'expirer que les transactions non validées par le client
+    const { rows } = await client.query(
+      `UPDATE transactions 
+       SET status = 'expiree', updated_at = NOW()
+       WHERE status = 'en_attente' 
+         AND expires_at < NOW()
+         AND client_validated = false
+       RETURNING *`
+    );
+    
+    // Logger chaque transaction expirée
+    for (const trx of rows) {
+      await logHistory({
+        action_type: 'transaction_expired',
+        actor_type: 'system',
+        actor_id: null,
+        entity_type: 'transaction',
+        entity_id: trx.id,
+        description: `Transaction expirée par le service de nettoyage - Code: ${trx.tracking_code}`,
+        metadata: { 
+          expires_at: trx.expires_at,
+          expired_at: new Date()
+        }
+      }, client);
+    }
+    
+    await client.query('COMMIT');
+    return { expiredCount: rows.length };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+

@@ -17,6 +17,18 @@ export const findAllCountries = async () => {
   return result.rows;
 };
 
+//  Compter le nombre total de pays
+export const countAllCountries = async () => {
+  const result = await pool.query(`SELECT COUNT(*) FROM countries`);
+  return parseInt(result.rows[0].count);
+};
+
+//  Compter le nombre de pays actifs
+export const countActiveCountries = async () => {
+  const result = await pool.query(`SELECT COUNT(*) FROM countries WHERE is_active = true`);
+  return parseInt(result.rows[0].count);
+};
+
 //  Créer un pays
 export const createCountry = async (name, code, phone_prefix, currency_id) => {
   const result = await pool.query(

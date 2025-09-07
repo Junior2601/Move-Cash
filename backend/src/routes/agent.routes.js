@@ -1,21 +1,38 @@
 import { Router } from 'express';
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
-import * as agentController from '../controllers/agent.controller.js';
+import {
+  loginAgent,
+  getProfile,
+  updateProfile,
+  changePassword,
+  registerAgent,
+  getAgents,
+  getAgent,
+  updateAgentProfile,
+  changeAgentPassword,
+  deactivateAgentAccount,
+  activateAgentAccount,
+  deleteAgentAccount
+} from '../controllers/agent.controller.js';
 
 const router = Router();
 
-// Création d'un agent (réservée aux admins)
-router.post('/', verifyAdminToken, agentController.registerAgent);
+// Routes publiques
+router.post('/login', loginAgent);
 
-// Connexion d'un agent
-router.post('/login', agentController.loginAgent);
+// Routes protégées pour les agents
+router.get('/profile', verifyAgentToken, getProfile);
+router.put('/profile', verifyAgentToken, updateProfile);
+router.put('/change-password', verifyAgentToken, changePassword);
 
-// Profil d'un agent connecté (test token)
-router.get('/profile', verifyAgentToken, (req, res) => {
-  res.json({
-    message: 'Profil de l’agent',
-    user: req.user
-  });
-});
+// Routes administrateur
+router.post('/', verifyAdminToken, registerAgent);
+router.get('/', verifyAdminToken, getAgents);
+router.get('/agent/:id', verifyAdminToken, getAgent);
+router.put('/:id', verifyAdminToken, updateAgentProfile);
+router.put('/:id/password', verifyAdminToken, changeAgentPassword);
+router.put('/:id/deactivate', verifyAdminToken, deactivateAgentAccount);
+router.put('/:id/activate', verifyAdminToken, activateAgentAccount);
+router.delete('/:id', verifyAdminToken, deleteAgentAccount);
 
 export default router;

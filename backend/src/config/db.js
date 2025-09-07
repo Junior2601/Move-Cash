@@ -21,3 +21,16 @@ pool.connect()
   .catch((err) => {
     console.error('❌ Erreur de connexion à PostgreSQL', err);
   });
+
+export const testConnection = async () => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query('SELECT NOW() as current_time');
+    console.log('✅ Database connection successful:', result.rows[0]);
+    client.release();
+    return true;
+  } catch (error) {
+    console.error('❌ Database connection failed:', error.message);
+    return false;
+  }
+};

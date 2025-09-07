@@ -262,3 +262,75 @@ CREATE TRIGGER trigger_admins_updated_at BEFORE UPDATE ON admins FOR EACH ROW EX
 CREATE TRIGGER trigger_agents_updated_at BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trigger_transactions_updated_at BEFORE UPDATE ON transactions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trigger_rates_updated_at BEFORE UPDATE ON rates FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Jointre pour la transaction et toutes les tables partenaires
+CREATE VIEW v_transaction_details AS
+SELECT 
+    t.id,
+    t.tracking_code,
+    t.status,
+    cf.name as from_country,
+    ct.name as to_country,
+    curr_from.code as from_currency_code,
+    curr_from.symbol as from_currency_symbol,
+    curr_to.code as to_currency_code,
+    curr_to.symbol as to_currency_symbol,
+    t.sender_phone,
+    t.receiver_phone,
+    sm.method as sender_method,
+	rm.method as reciever_method,
+    t.send_amount,
+    t.receive_amount,
+    t.rate_applied,
+    t.commission_applied,
+    a.name as agent_name,
+    an.number as authorized_number,
+    t.created_at,
+    t.expires_at,
+    t.completed_at,
+	t.cancelled_at
+FROM transactions t
+JOIN countries cf ON t.from_country_id = cf.id
+JOIN countries ct ON t.to_country_id = ct.id
+JOIN currencies curr_from ON cf.currency_id = curr_from.id
+JOIN currencies curr_to ON ct.currency_id = curr_to.id
+JOIN payment_methods sm ON t.sender_method_id = sm.id
+JOIN payment_methods rm ON t.receiver_method_id = rm.id
+LEFT JOIN agents a ON t.assigned_agent_id = a.id
+LEFT JOIN authorized_numbers an ON t.authorized_number_id = an.id;
+
+-- Jointure pour le pays et la devise
+CREATE VIEW v_country_currency AS
+SELECT 
+    c.id as country_id,
+    c.name as country_name,
+    c.code as country_code,
+    c.phone_prefix,
+    curr.id as currency_id,
+    curr.code as currency_code,
+    curr.name as currency_name,
+    curr.symbol as currency_symbol
+FROM countries c
+JOIN currencies curr ON c.currency_id = curr.id
+WHERE c.is_active = true AND curr.is_active = true;
+
+-- Vue des balances agents avec devises
+CREATE VIEW v_agent_balances AS
+SELECT 
+    a.id as agent_id,
+    a.name as agent_name,
+    c.name as country_name,
+    cur.code as currency_code,
+    cur.symbol as currency_symbol,
+    COALESCE(b.amount, 0) as balance_amount,
+    b.last_updated
+FROM agents a
+JOIN countries c ON a.country_id = c.id
+JOIN currencies cur ON c.currency_id = cur.id
+LEFT JOIN balances b ON a.id = b.agent_id AND cur.id = b.currency_id
+WHERE a.is_active = true;
+
+-- de nouvelles colonnes ajoutées à la tables transaction
+ALTER TABLE transactions 
+ADD COLUMN client_validated BOOLEAN DEFAULT FALSE,
+ADD COLUMN client_validated_at TIMESTAMP;
