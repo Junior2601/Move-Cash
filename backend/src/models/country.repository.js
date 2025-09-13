@@ -1,19 +1,25 @@
 import {pool} from '../config/db.js';
 
-//  Lister uniquement les pays actifs
+//  Lister uniquement les pays actifs avec le code de la devise
 export const findActiveCountries = async () => {
   const result = await pool.query(
-    `SELECT id, name, code, phone_prefix, currency_id 
-     FROM countries 
-     WHERE is_active = true 
-     ORDER BY name ASC`
+    `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, cur.code as currency_code
+     FROM countries c
+     LEFT JOIN currencies cur ON c.currency_id = cur.id
+     WHERE c.is_active = true 
+     ORDER BY c.name ASC`
   );
   return result.rows;
 };
 
-//  Lister tous les pays
+//  Lister tous les pays avec le code de la devise
 export const findAllCountries = async () => {
-  const result = await pool.query(`SELECT * FROM countries ORDER BY name ASC`);
+  const result = await pool.query(
+    `SELECT c.*, cur.code as currency_code 
+     FROM countries c
+     LEFT JOIN currencies cur ON c.currency_id = cur.id
+     ORDER BY c.name ASC`
+  );
   return result.rows;
 };
 
@@ -26,6 +32,12 @@ export const countAllCountries = async () => {
 //  Compter le nombre de pays actifs
 export const countActiveCountries = async () => {
   const result = await pool.query(`SELECT COUNT(*) FROM countries WHERE is_active = true`);
+  return parseInt(result.rows[0].count);
+};
+
+//  Compter le nombre de pays inactifs
+export const countInactiveCountries = async () => {
+  const result = await pool.query(`SELECT COUNT(*) FROM countries WHERE is_active = false`);
   return parseInt(result.rows[0].count);
 };
 

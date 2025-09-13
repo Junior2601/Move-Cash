@@ -21,9 +21,17 @@ export const createAgent = async ({ email, hashedPassword, name, country_id }) =
 // Récupérer tous les agents (avec pagination optionnelle)
 export const getAllAgents = async (limit = 50, offset = 0) => {
   const query = `
-    SELECT id, email, name, country_id, is_active, created_at, updated_at
-    FROM agents
-    ORDER BY created_at DESC
+    SELECT 
+      a.id, 
+      a.email, 
+      a.name, 
+      c.name as country_name, 
+      a.is_active, 
+      a.created_at, 
+      a.updated_at
+    FROM agents a
+    INNER JOIN countries c ON a.country_id = c.id
+    ORDER BY a.created_at DESC
     LIMIT $1 OFFSET $2
   `;
   const { rows } = await pool.query(query, [limit, offset]);
@@ -33,9 +41,17 @@ export const getAllAgents = async (limit = 50, offset = 0) => {
 // Récupérer un agent par ID
 export const getAgentById = async (id) => {
   const query = `
-    SELECT id, email, name, country_id, is_active, created_at, updated_at
-    FROM agents
-    WHERE id = $1
+    SELECT 
+      a.id, 
+      a.email, 
+      a.name, 
+      c.name as country_name, 
+      a.is_active, 
+      a.created_at, 
+      a.updated_at
+    FROM agents a
+    INNER JOIN countries c ON a.country_id = c.id
+    WHERE a.id = $1
     LIMIT 1
   `;
   const { rows } = await pool.query(query, [id]);
@@ -117,10 +133,17 @@ export const countAgents = async () => {
 // Rechercher des agents par nom ou email
 export const searchAgents = async (searchTerm, limit = 50, offset = 0) => {
   const query = `
-    SELECT id, email, name, country_id, is_active, created_at
-    FROM agents
-    WHERE name ILIKE $1 OR email ILIKE $1
-    ORDER BY created_at DESC
+    SELECT 
+      a.id, 
+      a.email, 
+      a.name, 
+      c.name as country_name, 
+      a.is_active, 
+      a.created_at
+    FROM agents a
+    INNER JOIN countries c ON a.country_id = c.id
+    WHERE a.name ILIKE $1 OR a.email ILIKE $1
+    ORDER BY a.created_at DESC
     LIMIT $2 OFFSET $3
   `;
   
@@ -131,10 +154,17 @@ export const searchAgents = async (searchTerm, limit = 50, offset = 0) => {
 // Récupérer les agents par pays
 export const getAgentsByCountry = async (country_id, limit = 50, offset = 0) => {
   const query = `
-    SELECT id, email, name, country_id, is_active, created_at
-    FROM agents
-    WHERE country_id = $1
-    ORDER BY created_at DESC
+    SELECT 
+      a.id, 
+      a.email, 
+      a.name, 
+      c.name as country_name, 
+      a.is_active, 
+      a.created_at
+    FROM agents a
+    INNER JOIN countries c ON a.country_id = c.id
+    WHERE a.country_id = $1
+    ORDER BY a.created_at DESC
     LIMIT $2 OFFSET $3
   `;
   

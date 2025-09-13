@@ -3,8 +3,24 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './pages/admin/Login';
 import Dashboard from './pages/admin/Dashboard';
+import AgentsList from './pages/admin/AgentsList';
+import AgentDetail from './pages/admin/AgentDetail';
+import CountriesList from './pages/admin/CountriesList';
+import RatesList from './pages/admin/RatesList';
+import BalancesList from './pages/admin/BalancesList';
+import TransactionsList from './pages/admin/TransactionsList';
 import AdminLayout from './components/ui/AdminLayout';
 import ProtectedRoute from './components/ui/ProtectedRoute';
+
+
+import AgentLogin from "./pages/Agents/AgentLogin";
+import AgentDashboard from "./pages/Agents/AgentDashboard";
+import TransactionList from "./pages/Agents/MyTransactions";
+import TransactionDetail from "./pages/Agents/TransactionDetail";
+import MyBalances from "./pages/agents/MyBalances";
+// import AgentHistory from "./pages/Agents/History";
+import AgentLayout from "./layouts/AgentLayout";
+import ProtectedRouteAgent from "./components/ui/ProtectedRouteAgent";
 // import NotFound from './pages/NotFound';
 
 export default function App() {
@@ -20,10 +36,34 @@ export default function App() {
             </ProtectedRoute>
           }>
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="agents" element={<AgentsList />} />
+            <Route path="agents/:id" element={<AgentDetail />} />
+            <Route path="countries" element={<CountriesList />} />
+            <Route path="rates" element={<RatesList />} />
+            <Route path="balances" element={<BalancesList />} />
+            <Route path="transactions" element={<TransactionsList />} />
             {/* autres routes admin */}
           </Route>
 
           {/* <Route path="*" element={<NotFound />} /> */}
+
+          <Route path="/agent/login" element={<AgentLogin />} />
+
+            <Route
+              path="/agent"
+              element={
+                <ProtectedRouteAgent>
+                  <AgentLayout />
+                </ProtectedRouteAgent>
+              }
+            >
+              <Route path="dashboard" element={<AgentDashboard />} />
+              <Route path="transactions" element={<TransactionList />} />
+              <Route path="transactions/:id" element={<TransactionDetail />} />
+              <Route path="balances" element={<MyBalances />} />
+              {/* <Route path="history" element={<AgentHistory />} /> */}
+            </Route>
+
         </Routes>
       </BrowserRouter>
     </AuthProvider>

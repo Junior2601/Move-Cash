@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import AdminLayout from '../components/Layout/AdminLayout';
 import api from '../api/api';
-import StatsCard from '../components/UI/StatsCard';
+import StatsCard from '../components/ui/StatsCard';
 
 export default function DashboardAdmin() {
   const [stats, setStats] = useState(null);

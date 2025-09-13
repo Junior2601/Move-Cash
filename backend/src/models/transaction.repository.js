@@ -463,12 +463,15 @@ export const findAllTransactions = async ({
   from_country_id = null,
   to_country_id = null,
   start_date = null,
-  end_date = null
+  end_date = null,
+  tracking_code = null, // Nouveau filtre
+  currency_code = null  // Nouveau filtre
 } = {}) => {
   const client = await pool.connect();
   try {
     console.log('🔍 Filters received:', {
-      page, limit, status, agent_id, from_country_id, to_country_id, start_date, end_date
+      page, limit, status, agent_id, from_country_id, to_country_id, 
+      start_date, end_date, tracking_code, currency_code
     });
 
     // Conversion et validation des paramètres
@@ -476,7 +479,7 @@ export const findAllTransactions = async ({
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const offset = (pageNum - 1) * limitNum;
     
-    // Construire la requête de base
+    // Construire la requête de base avec les nouvelles jointures
     let query = `
       SELECT 
         t.*,
@@ -485,13 +488,27 @@ export const findAllTransactions = async ({
         sm.method as sender_method_name,
         rm.method as receiver_method_name,
         a.name as agent_name,
-        a.email as agent_email
+        a.email as agent_email,
+        -- Ajout des devises
+        from_curr.code as from_currency_code,
+        from_curr.name as from_currency_name,
+        from_curr.symbol as from_currency_symbol,
+        to_curr.code as to_currency_code,
+        to_curr.name as to_currency_name,
+        to_curr.symbol as to_currency_symbol,
+        -- Ajout du numéro autorisé
+        an.number as authorized_number
       FROM transactions t
       LEFT JOIN countries fc ON t.from_country_id = fc.id
       LEFT JOIN countries tc ON t.to_country_id = tc.id
       LEFT JOIN payment_methods sm ON t.sender_method_id = sm.id
       LEFT JOIN payment_methods rm ON t.receiver_method_id = rm.id
       LEFT JOIN agents a ON t.assigned_agent_id = a.id
+      -- Jointures pour les devises (supposant que les pays ont une currency_id)
+      LEFT JOIN currencies from_curr ON fc.currency_id = from_curr.id
+      LEFT JOIN currencies to_curr ON tc.currency_id = to_curr.id
+      -- Jointure pour le numéro autorisé
+      LEFT JOIN authorized_numbers an ON t.authorized_number_id = an.id
       WHERE 1=1
     `;
     
@@ -549,6 +566,20 @@ export const findAllTransactions = async ({
       params.push(end_date);
     }
 
+    // NOUVEAU FILTRE: Tracking code
+    if (isValidParam(tracking_code)) {
+      paramCount++;
+      query += ` AND t.tracking_code ILIKE $${paramCount}`;
+      params.push(`%${tracking_code}%`);
+    }
+
+    // NOUVEAU FILTRE: Devise (recherche dans from_currency et to_currency)
+    if (isValidParam(currency_code)) {
+      paramCount++;
+      query += ` AND (from_curr.code ILIKE $${paramCount} OR to_curr.code ILIKE $${paramCount})`;
+      params.push(`%${currency_code}%`);
+    }
+
     // Ajouter l'ordre et la pagination
     query += ` ORDER BY t.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limitNum, offset);
@@ -560,12 +591,21 @@ export const findAllTransactions = async ({
     const { rows } = await client.query(query, params);
     console.log(`✅ Found ${rows.length} transactions`);
 
-    // Récupérer le nombre total pour la pagination - REQUÊTE SIMPLIFIÉE
-    let countQuery = `SELECT COUNT(*) FROM transactions t WHERE 1=1`;
+    // Récupérer le nombre total pour la pagination
+    let countQuery = `
+      SELECT COUNT(*) 
+      FROM transactions t
+      LEFT JOIN countries fc ON t.from_country_id = fc.id
+      LEFT JOIN countries tc ON t.to_country_id = tc.id
+      LEFT JOIN currencies from_curr ON fc.currency_id = from_curr.id
+      LEFT JOIN currencies to_curr ON tc.currency_id = to_curr.id
+      WHERE 1=1
+    `;
+    
     const countParams = [];
     let countParamCount = 0;
 
-    // Mêmes filtres que la requête principale (sans les JOINs pour la count)
+    // Mêmes filtres que la requête principale
     if (isValidParam(status)) {
       countParamCount++;
       countQuery += ` AND t.status = $${countParamCount}`;
@@ -611,6 +651,18 @@ export const findAllTransactions = async ({
       countParams.push(end_date);
     }
 
+    if (isValidParam(tracking_code)) {
+      countParamCount++;
+      countQuery += ` AND t.tracking_code ILIKE $${countParamCount}`;
+      countParams.push(`%${tracking_code}%`);
+    }
+
+    if (isValidParam(currency_code)) {
+      countParamCount++;
+      countQuery += ` AND (from_curr.code ILIKE $${countParamCount} OR to_curr.code ILIKE $${countParamCount})`;
+      countParams.push(`%${currency_code}%`);
+    }
+
     const countResult = await client.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
 
@@ -622,7 +674,13 @@ export const findAllTransactions = async ({
       expires_at: transaction.expires_at ? new Date(transaction.expires_at).toISOString() : null,
       completed_at: transaction.completed_at ? new Date(transaction.completed_at).toISOString() : null,
       cancelled_at: transaction.cancelled_at ? new Date(transaction.cancelled_at).toISOString() : null,
-      client_validated_at: transaction.client_validated_at ? new Date(transaction.client_validated_at).toISOString() : null
+      client_validated_at: transaction.client_validated_at ? new Date(transaction.client_validated_at).toISOString() : null,
+      
+      // Ajout des informations formatées
+      send_amount_formatted: transaction.send_amount ? 
+        `${transaction.from_currency_symbol || ''}${transaction.send_amount}` : '',
+      receive_amount_formatted: transaction.receive_amount ? 
+        `${transaction.to_currency_symbol || ''}${transaction.receive_amount}` : ''
     }));
 
     return {

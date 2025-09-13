@@ -28,7 +28,7 @@ router.put('/change-password', verifyAgentToken, changePassword);
 // Routes administrateur
 router.post('/', verifyAdminToken, registerAgent);
 router.get('/', verifyAdminToken, getAgents);
-router.get('/agent/:id', verifyAdminToken, getAgent);
+router.get('/:id', verifyAdminToken, getAgent);
 router.put('/:id', verifyAdminToken, updateAgentProfile);
 router.put('/:id/password', verifyAdminToken, changeAgentPassword);
 router.put('/:id/deactivate', verifyAdminToken, deactivateAgentAccount);

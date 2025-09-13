@@ -1,0 +1,640 @@
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import api from '../../api/api';
+import { 
+  Plus, 
+  Edit, 
+  Trash2, 
+  Eye, 
+  User, 
+  UserCheck, 
+  UserX,
+  Mail,
+  Globe,
+  Circle,
+  Search,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Upload,
+  X,
+  Key,
+  Phone,
+  MapPin,
+  Calendar
+} from 'lucide-react';
+
+export default function AgentsList() {
+  const [agents, setAgents] = useState([]);
+  const [countries, setCountries] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Détection de la taille d'écran
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const fetchAgents = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/agent');
+      let agentsData = [];
+      
+      if (Array.isArray(res.data)) {
+        agentsData = res.data;
+      } else if (res.data && Array.isArray(res.data.agents)) {
+        agentsData = res.data.agents;
+      } else if (res.data && Array.isArray(res.data.data)) {
+        agentsData = res.data.data;
+      }
+      
+      setAgents(agentsData);
+      
+      // Calculer les statistiques
+      const total = agentsData.length;
+      const active = agentsData.filter(agent => agent.is_active || agent.status === 'active').length;
+      const inactive = total - active;
+      
+      setStats({ total, active, inactive });
+    } catch (err) {
+      console.error('API Error:', err);
+      setAgents([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCountries = async () => {
+    try {
+      const res = await api.get('/country');
+      let countriesData = [];
+      
+      if (Array.isArray(res.data)) {
+        countriesData = res.data;
+      } else if (res.data && Array.isArray(res.data.countries)) {
+        countriesData = res.data.countries;
+      } else if (res.data && Array.isArray(res.data.data)) {
+        countriesData = res.data.data;
+      }
+      
+      setCountries(countriesData);
+    } catch (err) {
+      console.error('Error fetching countries:', err);
+      setCountries([
+        { id: 1, name: 'France' },
+        { id: 2, name: 'Belgique' },
+        { id: 3, name: 'Suisse' },
+        { id: 4, name: 'Canada' },
+        { id: 5, name: 'Luxembourg' }
+      ]);
+    }
+  };
+
+  useEffect(() => { 
+    fetchAgents();
+    fetchCountries();
+  }, []);
+
+  const saveAgent = async (e) => {
+    e.preventDefault();
+    try {
+      if (!modal.agent.name || !modal.agent.email || !modal.agent.country_id) {
+        alert("Veuillez remplir tous les champs obligatoires.");
+        return;
+      }
+
+      if (modal.mode === "add" && !modal.agent.password) {
+        alert("Veuillez saisir un mot de passe.");
+        return;
+      }
+
+      if (modal.mode === "add") {
+        await api.post('/agent', modal.agent);
+      } else {
+        const agentData = { ...modal.agent };
+        if (!agentData.password) {
+          delete agentData.password;
+        }
+        await api.put(`/agent/${modal.agent.id}`, agentData);
+      }
+      setModal(null);
+      setShowPassword(false);
+      fetchAgents();
+    } catch (err) {
+      console.error(err);
+      if (err.response?.status === 500) {
+        alert("Erreur serveur. Veuillez vérifier les données saisies.");
+      }
+    }
+  };
+
+  const deleteAgent = async (id) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cet agent ?")) return;
+    try {
+      await api.delete(`/agent/${id}`);
+      fetchAgents();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const isActive = status === 'active' || status === true;
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <Circle className={`mr-1 ${isActive ? 'text-green-500' : 'text-red-500'}`} size={10} fill="currentColor" />
+        {isActive ? 'Actif' : 'Inactif'}
+      </span>
+    );
+  };
+
+  const filteredAgents = agents
+    .filter(agent => {
+      const matchesSearch = agent.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           agent.email?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === 'all' || 
+                           (statusFilter === 'active' && (agent.is_active || agent.status === 'active')) ||
+                           (statusFilter === 'inactive' && (!agent.is_active && agent.status !== 'active'));
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      let aValue = a[sortField] || '';
+      let bValue = b[sortField] || '';
+      
+      if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+      if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ChevronDown size={16} className="opacity-30" />;
+    return sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />;
+  };
+
+  return (
+    <div className="p-4 lg:p-6 bg-gray-50 min-h-screen">
+      {/* En-tête avec titre et bouton */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-xl lg:text-2xl font-bold text-gray-800">Gestion des Agents</h1>
+          <p className="text-xs lg:text-sm text-gray-600">Gérez les comptes de vos agents</p>
+        </div>
+        <button
+          onClick={() => setModal({ mode: "add", agent: { name: "", email: "", password: "", country_id: "", is_active: true } })}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center justify-center shadow-sm text-sm lg:text-base w-full sm:w-auto"
+        >
+          <Plus size={18} className="mr-2" />
+          Ajouter un agent
+        </button>
+      </div>
+
+      {/* Cartes de statistiques */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-6">
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+          <div className="flex items-center">
+            <div className="p-2 lg:p-3 rounded-lg bg-indigo-100 text-indigo-600 mr-3 lg:mr-4">
+              <User size={20} className="lg:w-6 lg:h-6" />
+            </div>
+            <div>
+              <p className="text-xs lg:text-sm font-medium text-gray-600">Total agents</p>
+              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.total}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+          <div className="flex items-center">
+            <div className="p-2 lg:p-3 rounded-lg bg-green-100 text-green-600 mr-3 lg:mr-4">
+              <UserCheck size={20} className="lg:w-6 lg:h-6" />
+            </div>
+            <div>
+              <p className="text-xs lg:text-sm font-medium text-gray-600">Actifs</p>
+              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.active}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+          <div className="flex items-center">
+            <div className="p-2 lg:p-3 rounded-lg bg-red-100 text-red-600 mr-3 lg:mr-4">
+              <UserX size={20} className="lg:w-6 lg:h-6" />
+            </div>
+            <div>
+              <p className="text-xs lg:text-sm font-medium text-gray-600">Inactifs</p>
+              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.inactive}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Barre de recherche et filtres */}
+      <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-3 lg:p-4 mb-4 lg:mb-6 border border-gray-100">
+        <div className="flex flex-col gap-3">
+          <div className="relative">
+            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Rechercher un agent..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+            />
+          </div>
+          
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex items-center gap-2 flex-1">
+              <Filter size={16} className="text-gray-500" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base w-full"
+              >
+                <option value="all">Tous les statuts</option>
+                <option value="active">Actifs seulement</option>
+                <option value="inactive">Inactifs seulement</option>
+              </select>
+            </div>
+
+            <button className="flex items-center justify-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm lg:text-base">
+              <Download size={16} />
+              <span className="hidden sm:inline">Exporter</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tableau des agents - Version mobile */}
+      {isMobile ? (
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+          {loading ? (
+            <div className="p-8 text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+              <p className="mt-2 text-sm text-gray-500">Chargement des agents...</p>
+            </div>
+          ) : filteredAgents.length > 0 ? (
+            <div className="divide-y divide-gray-200">
+              {filteredAgents.map((agent) => (
+                <div key={agent.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium">
+                        {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                      </div>
+                      <div className="ml-3">
+                        <div className="text-sm font-medium text-gray-900">{agent.name}</div>
+                        <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                      </div>
+                    </div>
+                    {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center text-gray-700">
+                      <Mail size={14} className="mr-2 text-gray-400" />
+                      <span className="truncate">{agent.email}</span>
+                    </div>
+                    
+                    <div className="flex items-center text-gray-700">
+                      <Globe size={14} className="mr-2 text-gray-400" />
+                      <span>{agent.country_name || agent.country || 'Non spécifié'}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end space-x-2 mt-3 pt-3 border-t border-gray-100">
+                    <Link
+                      to={`/admin/agents/${agent.id}`}
+                      className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
+                      title="Voir détails"
+                    >
+                      <Eye size={16} />
+                    </Link>
+                    <button
+                      onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
+                      className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
+                      title="Modifier"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button
+                      onClick={() => deleteAgent(agent.id)}
+                      className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center">
+              <User size={32} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {searchTerm || statusFilter !== 'all' 
+                  ? "Modifiez vos critères de recherche" 
+                  : "Ajoutez votre premier agent"}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Version desktop */
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th 
+                    scope="col" 
+                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center">
+                      Nom
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('email')}
+                  >
+                    <div className="flex items-center">
+                      Email
+                      <SortIcon field="email" />
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('country_name')}
+                  >
+                    <div className="flex items-center">
+                      Pays
+                      <SortIcon field="country_name" />
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('is_active')}
+                  >
+                    <div className="flex items-center">
+                      Statut
+                      <SortIcon field="is_active" />
+                    </div>
+                  </th>
+                  <th scope="col" className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="5" className="px-6 py-8 text-center">
+                      <div className="flex justify-center items-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                      </div>
+                      <p className="mt-2 text-sm text-gray-500">Chargement des agents...</p>
+                    </td>
+                  </tr>
+                ) : filteredAgents.length > 0 ? (
+                  filteredAgents.map((agent) => (
+                    <tr key={agent.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-8 w-8 lg:h-10 lg:w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-sm lg:text-base">
+                            {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                          </div>
+                          <div className="ml-3 lg:ml-4">
+                            <div className="text-sm font-medium text-gray-900">{agent.name}</div>
+                            <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-700">
+                          <Mail size={14} className="mr-2 text-gray-400" />
+                          {agent.email}
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center text-sm text-gray-700">
+                          <Globe size={14} className="mr-2 text-gray-400" />
+                          {agent.country_name || agent.country || 'Non spécifié'}
+                        </div>
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                        {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <Link
+                            to={`/admin/agents/${agent.id}`}
+                            className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
+                            title="Voir détails"
+                          >
+                            <Eye size={16} />
+                          </Link>
+                          <button
+                            onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
+                            className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
+                            title="Modifier"
+                          >
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => deleteAgent(agent.id)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                            title="Supprimer"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" className="px-6 py-8 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <User size={32} className="text-gray-300 mb-2" />
+                        <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {searchTerm || statusFilter !== 'all' 
+                            ? "Essayez de modifier vos critères de recherche" 
+                            : "Commencez par ajouter votre premier agent"}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'ajout/modification */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-30 p-4">
+          <div className="bg-white p-4 lg:p-6 rounded-lg lg:rounded-xl shadow-lg w-full max-w-md relative max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => {
+                setModal(null);
+                setShowPassword(false);
+              }}
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+            
+            <h2 className="text-lg lg:text-xl font-semibold mb-4 flex items-center">
+              <User size={18} className="mr-2" />
+              {modal.mode === "add" ? "Nouvel agent" : "Modifier l'agent"}
+            </h2>
+            
+            <form onSubmit={saveAgent} className="space-y-3 lg:space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nom</label>
+                <input
+                  type="text"
+                  value={modal.agent.name || ''}
+                  onChange={(e) => setModal({ ...modal, agent: { ...modal.agent, name: e.target.value } })}
+                  placeholder="Nom complet"
+                  className="w-full border border-gray-300 rounded-lg px-3 lg:px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={modal.agent.email || ''}
+                  onChange={(e) => setModal({ ...modal, agent: { ...modal.agent, email: e.target.value } })}
+                  placeholder="Adresse email"
+                  className="w-full border border-gray-300 rounded-lg px-3 lg:px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mot de passe {modal.mode === "edit" && "(laisser vide pour ne pas modifier)"}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={modal.agent.password || ''}
+                    onChange={(e) => setModal({ ...modal, agent: { ...modal.agent, password: e.target.value } })}
+                    placeholder="Mot de passe"
+                    className="w-full border border-gray-300 rounded-lg px-3 lg:px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-10 text-sm lg:text-base"
+                    required={modal.mode === "add"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <Key size={14} />
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pays</label>
+                <select
+                  value={modal.agent.country_id || ''}
+                  onChange={(e) => setModal({ ...modal, agent: { ...modal.agent, country_id: e.target.value } })}
+                  className="w-full border border-gray-300 rounded-lg px-3 lg:px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+                  required
+                >
+                  <option value="">Sélectionnez un pays</option>
+                  {countries.map(country => (
+                    <option key={country.id} value={country.id}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Statut</label>
+                <select
+                  value={modal.agent.is_active !== undefined ? (modal.agent.is_active ? 'active' : 'inactive') : modal.agent.status || 'active'}
+                  onChange={(e) => {
+                    const isActive = e.target.value === 'active';
+                    setModal({ 
+                      ...modal, 
+                      agent: { 
+                        ...modal.agent, 
+                        is_active: isActive,
+                        status: e.target.value 
+                      } 
+                    });
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 lg:px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+                >
+                  <option value="active">Actif</option>
+                  <option value="inactive">Inactif</option>
+                </select>
+              </div>
+              
+              <div className="flex justify-end gap-2 lg:gap-3 pt-3 lg:pt-4 border-t border-gray-200">
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setModal(null);
+                    setShowPassword(false);
+                  }}
+                  className="px-3 lg:px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors text-sm lg:text-base"
+                >
+                  Annuler
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-indigo-600 text-white px-3 lg:px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors text-sm lg:text-base"
+                >
+                  {modal.mode === "add" ? "Créer" : "Modifier"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

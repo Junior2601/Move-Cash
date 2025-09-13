@@ -19,6 +19,7 @@ import transactionRoutes from "./routes/transaction.routes.js";
 import gainRoutes from "./routes/gain.routes.js";
 import historyRoutes from './routes/history.routes.js';
 import cleanupRoutes from './routes/cleanup.routes.js';
+import statisticsRoutes from './routes/statistics.routes.js';
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use('/api/balance', balanceRoutes);
 app.use('/api/gain', gainRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/admin', cleanupRoutes); // Protégez cette route avec une authentification admin!
+app.use('/api', statisticsRoutes);
 
 
 // Routes publics

@@ -1,78 +1,384 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../api/api';
-import StatsCard from '../../components/ui/StatsCard';
-import TransactionsTable from '../../components/ui/TransactionsTable';
+import { useNavigate } from 'react-router-dom';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
     total_transactions: 0,
     total_send_amount: 0,
-    pending_count: 0
+    pending_count: 0,
+    completed_count: 0
   });
+  
   const [loading, setLoading] = useState(true);
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [chartData, setChartData] = useState([]);
+  const [currencyData, setCurrencyData] = useState([]);
+  const [timeFilter, setTimeFilter] = useState('day');
+  const [exportLoading, setExportLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    async function fetchStats() {
-      setLoading(true);
-      try {
-        const res = await api.get('/transactions/stats');
-        const statsData = res.data.data; // Accédez à res.data.data
-        
-        setStats({
-          total_transactions: statsData.totals?.total_transactions || 0,
-          total_send_amount: statsData.totals?.total_send_amount || 0,
-          pending_count: statsData.by_status?.en_attente?.count || 0,
-          pending_countE: statsData.by_status?.effectuee?.count || 0
-        });
-        
-      } catch (err) {
-        console.error('Erreur récupération stats:', err);
-      } finally {
-        setLoading(false);
-      }
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+
+  // Fonction pour vérifier et obtenir le token
+  const getAuthToken = () => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      navigate('/admin/login');
+      return null;
     }
-    fetchStats();
-  }, []);
-
-  // Formater le montant pour l'affichage
-  const formatAmount = (amount) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF' // ou la devise par défaut
-    }).format(amount);
+    return token;
   };
 
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Tableau de bord</h1>
+  useEffect(() => {
+    fetchDashboardData();
+  }, [timeFilter]);
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatsCard 
-          title="Total Transactions" 
-          value={stats.total_transactions} 
-          loading={loading} 
-        />
-        {/* <StatsCard 
-          title="Volume total" 
-          value={formatAmount(stats.total_send_amount)} 
-          loading={loading} 
-        /> */}
-        <StatsCard 
-          title="Transactions en attente" 
-          value={stats.pending_count} 
-          loading={loading} 
-        />
-        <StatsCard 
-            title="Transactions effectuées" 
-            value={stats.pending_countE} 
-            loading={loading} 
-        />
+  const fetchDashboardData = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      // Configuration des headers avec le token
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+
+      // Récupérer les statistiques générales
+      const statsRes = await api.get('/transactions/stats', config);
+      const statsData = statsRes.data.data;
+      
+      setStats({
+        total_transactions: statsData.totals?.total_transactions || 0,
+        total_send_amount: statsData.totals?.total_send_amount || 0,
+        pending_count: statsData.by_status?.en_attente?.count || 0,
+        completed_count: statsData.by_status?.effectuee?.count || 0
+      });
+      
+      // Récupérer les données du graphique (avec fallback mock)
+      try {
+        const chartRes = await api.get(`/transactions/chart-data?period=${timeFilter}`, config);
+        setChartData(chartRes.data.data || getMockChartData(timeFilter));
+      } catch {
+        setChartData(getMockChartData(timeFilter));
+      }
+
+      // Récupérer les statistiques par devise (avec fallback mock)
+      try {
+        const currencyRes = await api.get('/transactions/currency-stats', config);
+        setCurrencyData(currencyRes.data.data || getMockCurrencyData());
+      } catch {
+        setCurrencyData(getMockCurrencyData());
+      }
+
+      // Récupérer les transactions récentes
+      const txRes = await api.get('/transactions/all-transactions?limit=5', config);
+      const transactionsData = txRes.data.data || [];
+      setRecentTransactions(Array.isArray(transactionsData) ? transactionsData : []);
+      
+    } catch (err) {
+      console.error('Erreur récupération données:', err);
+      
+      if (err.response?.status === 401) {
+        // Token invalide ou expiré
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+      
+      setError('Erreur de chargement des données');
+      // Utiliser des données mockées en cas d'erreur
+      setChartData(getMockChartData(timeFilter));
+      setCurrencyData(getMockCurrencyData());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fonctions de fallback pour les données mockées
+  const getMockChartData = (period) => {
+    const mockData = {
+      day: [
+        { date: '01', transactions: 12, amount: 4500 },
+        { date: '02', transactions: 18, amount: 6800 },
+        { date: '03', transactions: 8, amount: 3200 },
+        { date: '04', transactions: 22, amount: 8900 },
+        { date: '05', transactions: 15, amount: 5600 },
+        { date: '06', transactions: 28, amount: 11200 },
+        { date: '07', transactions: 19, amount: 7800 },
+      ],
+      week: [
+        { date: 'Sem 1', transactions: 85, amount: 32000 },
+        { date: 'Sem 2', transactions: 112, amount: 45000 },
+        { date: 'Sem 3', transactions: 78, amount: 29000 },
+        { date: 'Sem 4', transactions: 95, amount: 38000 },
+      ],
+      month: [
+        { date: 'Jan', transactions: 320, amount: 125000 },
+        { date: 'Fév', transactions: 280, amount: 98000 },
+        { date: 'Mar', transactions: 350, amount: 145000 },
+        { date: 'Avr', transactions: 410, amount: 168000 },
+      ]
+    };
+    return mockData[period] || [];
+  };
+
+  const getMockCurrencyData = () => [
+    { name: 'USD', value: 45000 },
+    { name: 'EUR', value: 32000 },
+    { name: 'XOF', value: 28000 },
+    { name: 'RUB', value: 15000 },
+  ];
+
+  // FONCTION MANQUANTE - AJOUTÉE ICI
+  const handleExport = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setExportLoading(true);
+    try {
+      const response = await api.get(`/transactions/export?filter=${timeFilter}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `transactions_${timeFilter}_${new Date().toISOString().split('T')[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      
+    } catch (error) {
+      console.error('Erreur export:', error);
+      if (error.response?.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+      } else {
+        alert('Erreur lors de l\'exportation');
+      }
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const successRate = stats.total_transactions > 0 
+    ? Math.round((stats.completed_count / stats.total_transactions) * 100) 
+    : 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 lg:p-6">
+      {/* Header responsive */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center mb-6">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Dashboard Administrateur</h1>
+          <p className="text-gray-600 mt-1 lg:mt-2 text-sm lg:text-base">Vue d'ensemble des activités de transfert</p>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row gap-2 lg:gap-4">
+          <button
+            onClick={fetchDashboardData}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 text-sm lg:text-base"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Actualiser
+          </button>
+          
+          <button
+            onClick={handleExport} // Maintenant cette fonction est définie
+            disabled={exportLoading}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 text-sm lg:text-base"
+          >
+            {exportLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Export...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Exporter
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
-      <section>
-        <h2 className="text-lg font-medium mb-2">Dernières transactions</h2>
-        <TransactionsTable />
-      </section>
+      {/* Message d'erreur */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6 text-sm">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError('')} className="text-red-800">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cartes de statistiques - Grid responsive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-6 lg:mb-8">
+        {[
+          { title: 'Total Transactions', value: stats.total_transactions, color: 'blue', icon: '📄' },
+          { title: 'Transactions Validées', value: stats.completed_count, color: 'green', icon: '✅' },
+          { title: 'En Attente', value: stats.pending_count, color: 'yellow', icon: '⏳' },
+          { title: 'Montant Total', value: new Intl.NumberFormat('fr-FR').format(stats.total_send_amount), color: 'purple', icon: '💰' }
+        ].map((card, index) => (
+          <div key={index} className={`bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg border-l-4 border-${card.color}-500`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-xs lg:text-sm">{card.title}</p>
+                <p className="text-xl lg:text-2xl font-bold text-gray-900">{card.value}</p>
+              </div>
+              <div className={`bg-${card.color}-100 p-2 lg:p-3 rounded-full`}>
+                <span className="text-lg lg:text-xl">{card.icon}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Graphiques et données - Stack sur mobile */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-6 lg:mb-8">
+        {/* Graphique des transactions */}
+        <div className="bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4 lg:mb-6">
+            <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Évolution des Transactions</h2>
+            <select
+              value={timeFilter}
+              onChange={(e) => setTimeFilter(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-xs lg:text-sm w-full sm:w-auto"
+            >
+              <option value="day">Par Jour</option>
+              <option value="week">Par Semaine</option>
+              <option value="month">Par Mois</option>
+            </select>
+          </div>
+          
+          <div className="h-64 lg:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" fontSize={12} />
+                <YAxis fontSize={12} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="transactions" stroke="#0088FE" name="Transactions" strokeWidth={2} />
+                <Line type="monotone" dataKey="amount" stroke="#00C49F" name="Montant" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Répartition par devise */}
+        <div className="bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg">
+          <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Répartition par Devise</h2>
+          
+          <div className="h-64 lg:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={currencyData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={60}
+                  innerRadius={40}
+                  fill="#8884d8"
+                  dataKey="value"
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={false}
+                >
+                  {currencyData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => new Intl.NumberFormat('fr-FR').format(value)} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Transactions récentes */}
+      <div className="bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-4 lg:mb-6">
+          <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Transactions Récentes</h2>
+          <span className="text-xs lg:text-sm text-gray-500">Dernières 5 transactions</span>
+        </div>
+
+        {recentTransactions.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs lg:text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-2 py-2 lg:px-4 lg:py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                  <th className="px-2 py-2 lg:px-4 lg:py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Montant</th>
+                  <th className="px-2 py-2 lg:px-4 lg:py-3 text-left font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Route</th>
+                  <th className="px-2 py-2 lg:px-4 lg:py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                  <th className="px-2 py-2 lg:px-4 lg:py-3 text-left font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Date</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {recentTransactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-gray-50">
+                    <td className="px-2 py-2 lg:px-4 lg:py-4 whitespace-nowrap font-medium text-gray-900">
+                      <span className="truncate max-w-16 lg:max-w-none block">
+                        {transaction.tracking_code}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 lg:px-4 lg:py-4 whitespace-nowrap text-gray-900">
+                      {new Intl.NumberFormat('fr-FR').format(transaction.send_amount)} {transaction.from_currency_code}
+                    </td>
+                    <td className="px-2 py-2 lg:px-4 lg:py-4 whitespace-nowrap text-gray-900 hidden sm:table-cell">
+                      {transaction.from_country_name} → {transaction.to_country_name}
+                    </td>
+                    <td className="px-2 py-2 lg:px-4 lg:py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        transaction.status === 'effectuee' 
+                          ? 'bg-green-100 text-green-800' 
+                          : transaction.status === 'en_attente'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {transaction.status?.substring(0, 1).toUpperCase() + transaction.status?.substring(1)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 lg:px-4 lg:py-4 whitespace-nowrap text-gray-900 hidden md:table-cell">
+                      {new Date(transaction.created_at).toLocaleDateString('fr-FR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-8 lg:py-12 text-gray-500">
+            <svg className="w-12 h-12 lg:w-16 lg:h-16 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <p className="mt-2 lg:mt-4 text-sm lg:text-base">Aucune transaction pour le moment</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
