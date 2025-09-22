@@ -1,6 +1,6 @@
 -- ===================================================================
--- SCHÉMA COMPLET BASE DE DONNÉES - PLATEFORME TRANSFERT D'ARGENT
--- Stack: PostgreSQL - Version Simplifiée
+-- SCHÉMA COMPLET BASE DE DONNÉES
+-- Stack: PostgreSQL
 -- ===================================================================
 
 -- SUPPRESSION DES TABLES EXISTANTES (ordre inverse des dépendances)
@@ -330,7 +330,7 @@ JOIN currencies cur ON c.currency_id = cur.id
 LEFT JOIN balances b ON a.id = b.agent_id AND cur.id = b.currency_id
 WHERE a.is_active = true;
 
--- de nouvelles colonnes ajoutées à la tables transaction
+-- de nouvelles colonnes ajoutées à la tables transaction (validation du client)
 ALTER TABLE transactions 
 ADD COLUMN client_validated BOOLEAN DEFAULT FALSE,
 ADD COLUMN client_validated_at TIMESTAMP;
