@@ -3,6 +3,7 @@ import api from '../../api/api';
 
 export default function CountriesList() {
   const [countries, setCountries] = useState([]);
+  const [currencies, setCurrencies] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -10,18 +11,33 @@ export default function CountriesList() {
   });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
+  const [error, setError] = useState(null);
 
   const fetchCountries = async () => {
     setLoading(true);
+    setError(null);
     try {
+      // D'abord, charger les pays et les stats
       const [countriesRes, statsRes] = await Promise.all([
         api.get('/country'),
         api.get('/country/stats')
       ]);
+      
       setCountries(countriesRes.data || []);
       setStats(statsRes.data || { total: 0, active: 0, inactive: 0 });
+      
+      // Ensuite, charger les devises séparément pour éviter que l'échec d'une requête bloque tout
+      try {
+        const currenciesRes = await api.get('/currencies/active');
+        setCurrencies(currenciesRes.data || []);
+      } catch (currencyError) {
+        console.warn('Erreur lors du chargement des devises:', currencyError);
+        setCurrencies([]);
+      }
+      
     } catch (err) {
-      console.error(err);
+      console.error('Erreur lors du chargement des pays:', err);
+      setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
@@ -43,6 +59,7 @@ export default function CountriesList() {
       fetchCountries();
     } catch (err) {
       console.error(err);
+      alert('Erreur lors de la sauvegarde du pays');
     }
   };
 
@@ -53,6 +70,7 @@ export default function CountriesList() {
       fetchCountries();
     } catch (err) {
       console.error(err);
+      alert('Erreur lors de la suppression du pays');
     }
   };
 
@@ -65,7 +83,13 @@ export default function CountriesList() {
       fetchCountries();
     } catch (err) {
       console.error(err);
+      alert('Erreur lors de la modification du statut');
     }
+  };
+
+  // Fonction pour réessayer le chargement
+  const retryLoad = () => {
+    fetchCountries();
   };
 
   return (
@@ -89,6 +113,19 @@ export default function CountriesList() {
         </button>
       </div>
 
+      {/* Afficher l'erreur si elle existe */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+          <p>{error}</p>
+          <button 
+            onClick={retryLoad}
+            className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+          >
+            Réessayer
+          </button>
+        </div>
+      )}
+
       {/* Cartes de statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow">
@@ -109,6 +146,10 @@ export default function CountriesList() {
         <div className="flex justify-center items-center h-64">
           <div className="text-gray-500">Chargement...</div>
         </div>
+      ) : error ? (
+        <div className="flex justify-center items-center h-64">
+          <div className="text-red-500">Impossible de charger les pays</div>
+        </div>
       ) : (
         <div className="bg-white rounded-xl shadow overflow-hidden">
           <table className="w-full text-sm">
@@ -123,49 +164,57 @@ export default function CountriesList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {countries.map((country) => (
-                <tr key={country.id} className="hover:bg-gray-50">
-                  <td className="py-3 px-4">{country.name}</td>
-                  <td className="py-3 px-4">{country.code}</td>
-                  <td className="py-3 px-4">{country.phone_prefix}</td>
-                  <td className="py-3 px-4">{country.currency_code}</td>
-                  <td className="py-3 px-4">
-                    <span 
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        country.is_active 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {country.is_active ? 'Actif' : 'Inactif'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right space-x-2">
-                    <button
-                      onClick={() => setModal({ mode: "edit", country })}
-                      className="text-indigo-600 hover:text-indigo-800"
-                    >
-                      Modifier
-                    </button>
-                    <button 
-                      onClick={() => toggleActiveStatus(country)}
-                      className={`${
-                        country.is_active 
-                          ? 'text-orange-600 hover:text-orange-800' 
-                          : 'text-green-600 hover:text-green-800'
-                      }`}
-                    >
-                      {country.is_active ? 'Désactiver' : 'Activer'}
-                    </button>
-                    <button 
-                      onClick={() => deleteCountry(country.id)} 
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      Supprimer
-                    </button>
+              {countries.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-gray-500">
+                    Aucun pays trouvé
                   </td>
                 </tr>
-              ))}
+              ) : (
+                countries.map((country) => (
+                  <tr key={country.id} className="hover:bg-gray-50">
+                    <td className="py-3 px-4">{country.name}</td>
+                    <td className="py-3 px-4">{country.code}</td>
+                    <td className="py-3 px-4">{country.phone_prefix}</td>
+                    <td className="py-3 px-4">{country.currency_code}</td>
+                    <td className="py-3 px-4">
+                      <span 
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          country.is_active 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {country.is_active ? 'Actif' : 'Inactif'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => setModal({ mode: "edit", country })}
+                        className="text-indigo-600 hover:text-indigo-800"
+                      >
+                        Modifier
+                      </button>
+                      <button 
+                        onClick={() => toggleActiveStatus(country)}
+                        className={`${
+                          country.is_active 
+                            ? 'text-orange-600 hover:text-orange-800' 
+                            : 'text-green-600 hover:text-green-800'
+                        }`}
+                      >
+                        {country.is_active ? 'Désactiver' : 'Activer'}
+                      </button>
+                      <button 
+                        onClick={() => deleteCountry(country.id)} 
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        Supprimer
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -223,16 +272,27 @@ export default function CountriesList() {
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                ID de la devise
+                Devise
               </label>
-              <input
-                type="number"
+              <select
                 value={modal.country.currency_id || ''}
-                onChange={(e) => setModal({ ...modal, country: { ...modal.country, currency_id: parseInt(e.target.value) || null } })}
-                placeholder="ID de la devise"
+                onChange={(e) => setModal({ 
+                  ...modal, 
+                  country: { 
+                    ...modal.country, 
+                    currency_id: e.target.value ? parseInt(e.target.value) : null 
+                  } 
+                })}
                 className="w-full border px-3 py-2 rounded"
                 required
-              />
+              >
+                <option value="">Sélectionnez une devise</option>
+                {currencies.map((currency) => (
+                  <option key={currency.id} value={currency.id}>
+                    {currency.code} - {currency.name} ({currency.symbol})
+                  </option>
+                ))}
+              </select>
             </div>
             
             {modal.mode === "edit" && (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import api from '../../api/api';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -22,87 +22,18 @@ export default function Dashboard() {
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
-  // Fonction pour vérifier et obtenir le token
-  const getAuthToken = () => {
-    const token = localStorage.getItem('adminToken');
+  // 🔧 CORRECTION : useCallback pour stabiliser la fonction
+  const getAuthToken = useCallback(() => {
+    const token = localStorage.getItem('admin_token');
     if (!token) {
       navigate('/admin/login');
       return null;
     }
     return token;
-  };
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [timeFilter]);
-
-  const fetchDashboardData = async () => {
-    const token = getAuthToken();
-    if (!token) return;
-
-    setLoading(true);
-    setError('');
-    try {
-      // Configuration des headers avec le token
-      const config = {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      };
-
-      // Récupérer les statistiques générales
-      const statsRes = await api.get('/transactions/stats', config);
-      const statsData = statsRes.data.data;
-      
-      setStats({
-        total_transactions: statsData.totals?.total_transactions || 0,
-        total_send_amount: statsData.totals?.total_send_amount || 0,
-        pending_count: statsData.by_status?.en_attente?.count || 0,
-        completed_count: statsData.by_status?.effectuee?.count || 0
-      });
-      
-      // Récupérer les données du graphique (avec fallback mock)
-      try {
-        const chartRes = await api.get(`/transactions/chart-data?period=${timeFilter}`, config);
-        setChartData(chartRes.data.data || getMockChartData(timeFilter));
-      } catch {
-        setChartData(getMockChartData(timeFilter));
-      }
-
-      // Récupérer les statistiques par devise (avec fallback mock)
-      try {
-        const currencyRes = await api.get('/transactions/currency-stats', config);
-        setCurrencyData(currencyRes.data.data || getMockCurrencyData());
-      } catch {
-        setCurrencyData(getMockCurrencyData());
-      }
-
-      // Récupérer les transactions récentes
-      const txRes = await api.get('/transactions/all-transactions?limit=5', config);
-      const transactionsData = txRes.data.data || [];
-      setRecentTransactions(Array.isArray(transactionsData) ? transactionsData : []);
-      
-    } catch (err) {
-      console.error('Erreur récupération données:', err);
-      
-      if (err.response?.status === 401) {
-        // Token invalide ou expiré
-        localStorage.removeItem('adminToken');
-        navigate('/admin/login');
-        return;
-      }
-      
-      setError('Erreur de chargement des données');
-      // Utiliser des données mockées en cas d'erreur
-      setChartData(getMockChartData(timeFilter));
-      setCurrencyData(getMockCurrencyData());
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [navigate]);
 
   // Fonctions de fallback pour les données mockées
-  const getMockChartData = (period) => {
+  const getMockChartData = useCallback((period) => {
     const mockData = {
       day: [
         { date: '01', transactions: 12, amount: 4500 },
@@ -127,16 +58,83 @@ export default function Dashboard() {
       ]
     };
     return mockData[period] || [];
-  };
+  }, []);
 
-  const getMockCurrencyData = () => [
+  const getMockCurrencyData = useCallback(() => [
     { name: 'USD', value: 45000 },
     { name: 'EUR', value: 32000 },
     { name: 'XOF', value: 28000 },
     { name: 'RUB', value: 15000 },
-  ];
+  ], []);
 
-  // FONCTION MANQUANTE - AJOUTÉE ICI
+  // 🔧 CORRECTION : useCallback pour fetchDashboardData
+  const fetchDashboardData = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      };
+
+      // Récupérer les statistiques générales
+      const statsRes = await api.get('/transactions/stats', config);
+      const statsData = statsRes.data.data;
+      
+      setStats({
+        total_transactions: statsData.totals?.total_transactions || 0,
+        total_send_amount: statsData.totals?.total_send_amount || 0,
+        pending_count: statsData.by_status?.en_attente?.count || 0,
+        completed_count: statsData.by_status?.effectuee?.count || 0
+      });
+      
+      // Récupérer les données du graphique
+      try {
+        const chartRes = await api.get(`/transactions/chart-data?period=${timeFilter}`, config);
+        setChartData(chartRes.data.data || getMockChartData(timeFilter));
+      } catch {
+        setChartData(getMockChartData(timeFilter));
+      }
+
+      // Récupérer les statistiques par devise
+      try {
+        const currencyRes = await api.get('/transactions/currency-stats', config);
+        setCurrencyData(currencyRes.data.data || getMockCurrencyData());
+      } catch {
+        setCurrencyData(getMockCurrencyData());
+      }
+
+      // Récupérer les transactions récentes
+      const txRes = await api.get('/transactions/all-transactions?limit=5', config);
+      const transactionsData = txRes.data.data || [];
+      setRecentTransactions(Array.isArray(transactionsData) ? transactionsData : []);
+      
+    } catch (err) {
+      console.error('Erreur récupération données:', err);
+      
+      if (err.response?.status === 401) {
+        localStorage.removeItem('admin_token');
+        navigate('/admin/login');
+        return;
+      }
+      
+      setError('Erreur de chargement des données');
+      setChartData(getMockChartData(timeFilter));
+      setCurrencyData(getMockCurrencyData());
+    } finally {
+      setLoading(false);
+    }
+  }, [getAuthToken, timeFilter, navigate, getMockChartData, getMockCurrencyData]);
+
+  // 🔧 CORRECTION : useEffect avec dépendances correctes
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
   const handleExport = async () => {
     const token = getAuthToken();
     if (!token) return;
@@ -159,7 +157,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Erreur export:', error);
       if (error.response?.status === 401) {
-        localStorage.removeItem('adminToken');
+        localStorage.removeItem('admin_token');
         navigate('/admin/login');
       } else {
         alert('Erreur lors de l\'exportation');
@@ -202,7 +200,7 @@ export default function Dashboard() {
           </button>
           
           <button
-            onClick={handleExport} // Maintenant cette fonction est définie
+            onClick={handleExport}
             disabled={exportLoading}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 text-sm lg:text-base"
           >
@@ -238,23 +236,68 @@ export default function Dashboard() {
       {/* Cartes de statistiques - Grid responsive */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-6 lg:mb-8">
         {[
-          { title: 'Total Transactions', value: stats.total_transactions, color: 'blue', icon: '📄' },
-          { title: 'Transactions Validées', value: stats.completed_count, color: 'green', icon: '✅' },
-          { title: 'En Attente', value: stats.pending_count, color: 'yellow', icon: '⏳' },
-          { title: 'Montant Total', value: new Intl.NumberFormat('fr-FR').format(stats.total_send_amount), color: 'purple', icon: '💰' }
+          { 
+            title: 'Total Transactions', 
+            value: stats.total_transactions.toLocaleString('fr-FR'), 
+            color: 'blue', 
+            icon: '📄',
+            bgColor: 'bg-blue-100',
+            borderColor: 'border-blue-500'
+          },
+          { 
+            title: 'Transactions Validées', 
+            value: stats.completed_count.toLocaleString('fr-FR'), 
+            color: 'green', 
+            icon: '✅',
+            bgColor: 'bg-green-100',
+            borderColor: 'border-green-500'
+          },
+          { 
+            title: 'En Attente', 
+            value: stats.pending_count.toLocaleString('fr-FR'), 
+            color: 'yellow', 
+            icon: '⏳',
+            bgColor: 'bg-yellow-100',
+            borderColor: 'border-yellow-500'
+          },
+          { 
+            title: 'Montant Total', 
+            value: `${stats.total_send_amount.toLocaleString('fr-FR')} €`, 
+            color: 'purple', 
+            icon: '💰',
+            bgColor: 'bg-purple-100',
+            borderColor: 'border-purple-500'
+          }
         ].map((card, index) => (
-          <div key={index} className={`bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg border-l-4 border-${card.color}-500`}>
+          <div key={index} className={`bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg border-l-4 ${card.borderColor}`}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-xs lg:text-sm">{card.title}</p>
                 <p className="text-xl lg:text-2xl font-bold text-gray-900">{card.value}</p>
               </div>
-              <div className={`bg-${card.color}-100 p-2 lg:p-3 rounded-full`}>
+              <div className={`${card.bgColor} p-2 lg:p-3 rounded-full`}>
                 <span className="text-lg lg:text-xl">{card.icon}</span>
               </div>
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Taux de réussite */}
+      <div className="bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg mb-6 lg:mb-8">
+        <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4">Taux de Réussite</h2>
+        <div className="flex items-center gap-4">
+          <div className="flex-1 bg-gray-200 rounded-full h-4">
+            <div 
+              className="bg-green-500 h-4 rounded-full transition-all duration-500"
+              style={{ width: `${successRate}%` }}
+            ></div>
+          </div>
+          <span className="text-lg font-bold text-gray-700">{successRate}%</span>
+        </div>
+        <p className="text-sm text-gray-600 mt-2">
+          {stats.completed_count} sur {stats.total_transactions} transactions complétées avec succès
+        </p>
       </div>
 
       {/* Graphiques et données - Stack sur mobile */}
@@ -280,10 +323,29 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" fontSize={12} />
                 <YAxis fontSize={12} />
-                <Tooltip />
+                <Tooltip 
+                  formatter={(value, name) => [
+                    name === 'amount' ? `${value.toLocaleString('fr-FR')} €` : value.toLocaleString('fr-FR'),
+                    name === 'amount' ? 'Montant' : 'Transactions'
+                  ]}
+                />
                 <Legend />
-                <Line type="monotone" dataKey="transactions" stroke="#0088FE" name="Transactions" strokeWidth={2} />
-                <Line type="monotone" dataKey="amount" stroke="#00C49F" name="Montant" strokeWidth={2} />
+                <Line 
+                  type="monotone" 
+                  dataKey="transactions" 
+                  stroke="#0088FE" 
+                  name="Transactions" 
+                  strokeWidth={2} 
+                  dot={{ r: 4 }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="amount" 
+                  stroke="#00C49F" 
+                  name="Montant" 
+                  strokeWidth={2} 
+                  dot={{ r: 4 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -300,7 +362,7 @@ export default function Dashboard() {
                   data={currencyData}
                   cx="50%"
                   cy="50%"
-                  outerRadius={60}
+                  outerRadius={80}
                   innerRadius={40}
                   fill="#8884d8"
                   dataKey="value"
@@ -311,7 +373,9 @@ export default function Dashboard() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => new Intl.NumberFormat('fr-FR').format(value)} />
+                <Tooltip 
+                  formatter={(value) => new Intl.NumberFormat('fr-FR').format(value)}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>

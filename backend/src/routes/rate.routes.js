@@ -4,16 +4,20 @@ import {
   getAllRates,
   addRate,
   updateRate,
-  deleteRate
+  deleteRate,
+  getRateByCurrencies
 } from '../controllers/rate.controller.js';
 import { verifyAdminToken } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-//  Routes publiques
+// Route publique
 router.get('/active', getActiveRates);
 
-//  Routes admin
+// Route pour obtenir un taux spécifique
+router.get('/pair/:from_currency_id/:to_currency_id', getRateByCurrencies);
+
+// Routes admin
 router.get('/', verifyAdminToken, getAllRates);
 router.post('/', verifyAdminToken, addRate);
 router.put('/:id', verifyAdminToken, updateRate);

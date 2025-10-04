@@ -9,6 +9,7 @@ import CountriesList from './pages/admin/CountriesList';
 import RatesList from './pages/admin/RatesList';
 import BalancesList from './pages/admin/BalancesList';
 import TransactionsList from './pages/admin/TransactionsList';
+import HistoryList from './pages/admin/HistoryList';
 import AdminLayout from './components/ui/AdminLayout';
 import ProtectedRoute from './components/ui/ProtectedRoute';
 
@@ -22,6 +23,15 @@ import MyBalances from "./pages/agents/MyBalances";
 import AgentLayout from "./layouts/AgentLayout";
 import ProtectedRouteAgent from "./components/ui/ProtectedRouteAgent";
 // import NotFound from './pages/NotFound';
+
+
+import PublicLayout from "./layouts/PublicLayout";
+import HomePage from "./pages/HomePage";
+import TransactionPage from "./components/public/TransactionForm";
+import TrackingPage from "./components/public/TrackingForm";
+import SupportPage from "./components/public/ServiceClient";
+import CalculatorPage from "./components/public/ConversionCalculator";
+
 
 export default function App() {
   return (
@@ -42,6 +52,7 @@ export default function App() {
             <Route path="rates" element={<RatesList />} />
             <Route path="balances" element={<BalancesList />} />
             <Route path="transactions" element={<TransactionsList />} />
+            <Route path="historiques" element={<HistoryList />} />
             {/* autres routes admin */}
           </Route>
 
@@ -63,6 +74,16 @@ export default function App() {
               <Route path="balances" element={<MyBalances />} />
               {/* <Route path="history" element={<AgentHistory />} /> */}
             </Route>
+
+          <Route element={<PublicLayout />}>
+            <Route path="/" element={<HomePage />} />
+            
+            <Route path="/transaction" element={<TransactionPage />} />
+            <Route path="/tracking" element={<TrackingPage />} />
+            <Route path="/support" element={<SupportPage />} />
+            <Route path="/calculator" element={<CalculatorPage />} />
+
+          </Route>
 
         </Routes>
       </BrowserRouter>

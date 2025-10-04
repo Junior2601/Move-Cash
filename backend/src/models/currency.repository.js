@@ -1,4 +1,3 @@
-// src/models/currency.model.js
 import {pool} from '../config/db.js';
 
 //  Lister uniquement les devises actives

@@ -166,6 +166,122 @@ export default function AgentsList() {
     );
   };
 
+  // Composants Skeleton
+  const StatsSkeleton = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-6">
+      {[...Array(3)].map((_, index) => (
+        <div key={index} className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 animate-pulse">
+          <div className="flex items-center">
+            <div className="p-2 lg:p-3 rounded-lg bg-gray-200 mr-3 lg:mr-4">
+              <div className="w-5 h-5 lg:w-6 lg:h-6"></div>
+            </div>
+            <div className="flex-1">
+              <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
+              <div className="h-6 lg:h-7 bg-gray-200 rounded w-1/3"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const SearchBarSkeleton = () => (
+    <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-3 lg:p-4 mb-4 lg:mb-6 border border-gray-100 animate-pulse">
+      <div className="flex flex-col gap-3">
+        <div className="h-10 bg-gray-200 rounded-lg"></div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 h-10 bg-gray-200 rounded-lg"></div>
+          <div className="w-full sm:w-32 h-10 bg-gray-200 rounded-lg"></div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const MobileCardSkeleton = () => (
+    <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+      <div className="divide-y divide-gray-200">
+        {[...Array(5)].map((_, index) => (
+          <div key={index} className="p-4 animate-pulse">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center">
+                <div className="flex-shrink-0 h-10 w-10 bg-gray-200 rounded-full"></div>
+                <div className="ml-3 space-y-2">
+                  <div className="h-4 bg-gray-200 rounded w-24"></div>
+                  <div className="h-3 bg-gray-200 rounded w-16"></div>
+                </div>
+              </div>
+              <div className="h-6 bg-gray-200 rounded w-16"></div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center">
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              </div>
+              <div className="flex items-center">
+                <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-2 mt-3 pt-3">
+              <div className="h-8 bg-gray-200 rounded w-8"></div>
+              <div className="h-8 bg-gray-200 rounded w-8"></div>
+              <div className="h-8 bg-gray-200 rounded w-8"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const DesktopTableSkeleton = () => (
+    <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              {['Nom', 'Email', 'Pays', 'Statut', 'Actions'].map((header, index) => (
+                <th key={index} className="px-4 lg:px-6 py-3 text-left">
+                  <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {[...Array(6)].map((_, index) => (
+              <tr key={index} className="animate-pulse">
+                <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0 h-8 w-8 lg:h-10 lg:w-10 bg-gray-200 rounded-full"></div>
+                    <div className="ml-3 lg:ml-4 space-y-2">
+                      <div className="h-4 bg-gray-200 rounded w-32"></div>
+                      <div className="h-3 bg-gray-200 rounded w-16"></div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                  <div className="h-4 bg-gray-200 rounded w-40"></div>
+                </td>
+                <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                  <div className="h-4 bg-gray-200 rounded w-24"></div>
+                </td>
+                <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                  <div className="h-6 bg-gray-200 rounded w-16"></div>
+                </td>
+                <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                  <div className="flex space-x-2">
+                    <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                    <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                    <div className="h-8 w-8 bg-gray-200 rounded"></div>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   const filteredAgents = agents
     .filter(agent => {
       const matchesSearch = agent.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -218,293 +334,291 @@ export default function AgentsList() {
         </button>
       </div>
 
-      {/* Cartes de statistiques */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-6">
-        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 rounded-lg bg-indigo-100 text-indigo-600 mr-3 lg:mr-4">
-              <User size={20} className="lg:w-6 lg:h-6" />
+      {/* Cartes de statistiques - Skeleton ou données réelles */}
+      {loading ? (
+        <StatsSkeleton />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4 mb-6">
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+            <div className="flex items-center">
+              <div className="p-2 lg:p-3 rounded-lg bg-indigo-100 text-indigo-600 mr-3 lg:mr-4">
+                <User size={20} className="lg:w-6 lg:h-6" />
+              </div>
+              <div>
+                <p className="text-xs lg:text-sm font-medium text-gray-600">Total agents</p>
+                <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.total}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs lg:text-sm font-medium text-gray-600">Total agents</p>
-              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.total}</p>
+          </div>
+
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+            <div className="flex items-center">
+              <div className="p-2 lg:p-3 rounded-lg bg-green-100 text-green-600 mr-3 lg:mr-4">
+                <UserCheck size={20} className="lg:w-6 lg:h-6" />
+              </div>
+              <div>
+                <p className="text-xs lg:text-sm font-medium text-gray-600">Actifs</p>
+                <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.active}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+            <div className="flex items-center">
+              <div className="p-2 lg:p-3 rounded-lg bg-red-100 text-red-600 mr-3 lg:mr-4">
+                <UserX size={20} className="lg:w-6 lg:h-6" />
+              </div>
+              <div>
+                <p className="text-xs lg:text-sm font-medium text-gray-600">Inactifs</p>
+                <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.inactive}</p>
+              </div>
             </div>
           </div>
         </div>
+      )}
 
-        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 rounded-lg bg-green-100 text-green-600 mr-3 lg:mr-4">
-              <UserCheck size={20} className="lg:w-6 lg:h-6" />
+      {/* Barre de recherche et filtres - Skeleton ou données réelles */}
+      {loading ? (
+        <SearchBarSkeleton />
+      ) : (
+        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-3 lg:p-4 mb-4 lg:mb-6 border border-gray-100">
+          <div className="flex flex-col gap-3">
+            <div className="relative">
+              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Rechercher un agent..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
+              />
             </div>
-            <div>
-              <p className="text-xs lg:text-sm font-medium text-gray-600">Actifs</p>
-              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.active}</p>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex items-center gap-2 flex-1">
+                <Filter size={16} className="text-gray-500" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base w-full"
+                >
+                  <option value="all">Tous les statuts</option>
+                  <option value="active">Actifs seulement</option>
+                  <option value="inactive">Inactifs seulement</option>
+                </select>
+              </div>
+
+              <button className="flex items-center justify-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm lg:text-base">
+                <Download size={16} />
+                <span className="hidden sm:inline">Exporter</span>
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
-          <div className="flex items-center">
-            <div className="p-2 lg:p-3 rounded-lg bg-red-100 text-red-600 mr-3 lg:mr-4">
-              <UserX size={20} className="lg:w-6 lg:h-6" />
-            </div>
-            <div>
-              <p className="text-xs lg:text-sm font-medium text-gray-600">Inactifs</p>
-              <p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.inactive}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Barre de recherche et filtres */}
-      <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-3 lg:p-4 mb-4 lg:mb-6 border border-gray-100">
-        <div className="flex flex-col gap-3">
-          <div className="relative">
-            <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Rechercher un agent..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
-            />
-          </div>
-          
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex items-center gap-2 flex-1">
-              <Filter size={16} className="text-gray-500" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base w-full"
-              >
-                <option value="all">Tous les statuts</option>
-                <option value="active">Actifs seulement</option>
-                <option value="inactive">Inactifs seulement</option>
-              </select>
-            </div>
-
-            <button className="flex items-center justify-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm lg:text-base">
-              <Download size={16} />
-              <span className="hidden sm:inline">Exporter</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Tableau des agents - Version mobile */}
-      {isMobile ? (
-        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
-          {loading ? (
-            <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-500">Chargement des agents...</p>
-            </div>
-          ) : filteredAgents.length > 0 ? (
-            <div className="divide-y divide-gray-200">
-              {filteredAgents.map((agent) => (
-                <div key={agent.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium">
-                        {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+      {loading ? (
+        isMobile ? <MobileCardSkeleton /> : <DesktopTableSkeleton />
+      ) : (
+        isMobile ? (
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+            {filteredAgents.length > 0 ? (
+              <div className="divide-y divide-gray-200">
+                {filteredAgents.map((agent) => (
+                  <div key={agent.id} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium">
+                          {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                        </div>
+                        <div className="ml-3">
+                          <div className="text-sm font-medium text-gray-900">{agent.name}</div>
+                          <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                        </div>
                       </div>
-                      <div className="ml-3">
-                        <div className="text-sm font-medium text-gray-900">{agent.name}</div>
-                        <div className="text-xs text-gray-500">ID: {agent.id}</div>
-                      </div>
-                    </div>
-                    {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
-                  </div>
-                  
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center text-gray-700">
-                      <Mail size={14} className="mr-2 text-gray-400" />
-                      <span className="truncate">{agent.email}</span>
+                      {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
                     </div>
                     
-                    <div className="flex items-center text-gray-700">
-                      <Globe size={14} className="mr-2 text-gray-400" />
-                      <span>{agent.country_name || agent.country || 'Non spécifié'}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-end space-x-2 mt-3 pt-3 border-t border-gray-100">
-                    <Link
-                      to={`/admin/agents/${agent.id}`}
-                      className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
-                      title="Voir détails"
-                    >
-                      <Eye size={16} />
-                    </Link>
-                    <button
-                      onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
-                      className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
-                      title="Modifier"
-                    >
-                      <Edit size={16} />
-                    </button>
-                    <button
-                      onClick={() => deleteAgent(agent.id)}
-                      className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
-                      title="Supprimer"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-8 text-center">
-              <User size={32} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {searchTerm || statusFilter !== 'all' 
-                  ? "Modifiez vos critères de recherche" 
-                  : "Ajoutez votre premier agent"}
-              </p>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Version desktop */
-        <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th 
-                    scope="col" 
-                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSort('name')}
-                  >
-                    <div className="flex items-center">
-                      Nom
-                      <SortIcon field="name" />
-                    </div>
-                  </th>
-                  <th 
-                    scope="col" 
-                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSort('email')}
-                  >
-                    <div className="flex items-center">
-                      Email
-                      <SortIcon field="email" />
-                    </div>
-                  </th>
-                  <th 
-                    scope="col" 
-                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSort('country_name')}
-                  >
-                    <div className="flex items-center">
-                      Pays
-                      <SortIcon field="country_name" />
-                    </div>
-                  </th>
-                  <th 
-                    scope="col" 
-                    className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                    onClick={() => handleSort('is_active')}
-                  >
-                    <div className="flex items-center">
-                      Statut
-                      <SortIcon field="is_active" />
-                    </div>
-                  </th>
-                  <th scope="col" className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center">
-                      <div className="flex justify-center items-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center text-gray-700">
+                        <Mail size={14} className="mr-2 text-gray-400" />
+                        <span className="truncate">{agent.email}</span>
                       </div>
-                      <p className="mt-2 text-sm text-gray-500">Chargement des agents...</p>
-                    </td>
+                      
+                      <div className="flex items-center text-gray-700">
+                        <Globe size={14} className="mr-2 text-gray-400" />
+                        <span>{agent.country_name || agent.country || 'Non spécifié'}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end space-x-2 mt-3 pt-3 border-t border-gray-100">
+                      <Link
+                        to={`/admin/agents/${agent.id}`}
+                        className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
+                        title="Voir détails"
+                      >
+                        <Eye size={16} />
+                      </Link>
+                      <button
+                        onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
+                        className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
+                        title="Modifier"
+                      >
+                        <Edit size={16} />
+                      </button>
+                      <button
+                        onClick={() => deleteAgent(agent.id)}
+                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 text-center">
+                <User size={32} className="text-gray-300 mx-auto mb-2" />
+                <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {searchTerm || statusFilter !== 'all' 
+                    ? "Modifiez vos critères de recherche" 
+                    : "Ajoutez votre premier agent"}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Version desktop */
+          <div className="bg-white rounded-lg lg:rounded-xl shadow-sm overflow-hidden border border-gray-100">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th 
+                      scope="col" 
+                      className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      onClick={() => handleSort('name')}
+                    >
+                      <div className="flex items-center">
+                        Nom
+                        <SortIcon field="name" />
+                      </div>
+                    </th>
+                    <th 
+                      scope="col" 
+                      className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      onClick={() => handleSort('email')}
+                    >
+                      <div className="flex items-center">
+                        Email
+                        <SortIcon field="email" />
+                      </div>
+                    </th>
+                    <th 
+                      scope="col" 
+                      className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      onClick={() => handleSort('country_name')}
+                    >
+                      <div className="flex items-center">
+                        Pays
+                        <SortIcon field="country_name" />
+                      </div>
+                    </th>
+                    <th 
+                      scope="col" 
+                      className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      onClick={() => handleSort('is_active')}
+                    >
+                      <div className="flex items-center">
+                        Statut
+                        <SortIcon field="is_active" />
+                      </div>
+                    </th>
+                    <th scope="col" className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ) : filteredAgents.length > 0 ? (
-                  filteredAgents.map((agent) => (
-                    <tr key={agent.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-8 w-8 lg:h-10 lg:w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-sm lg:text-base">
-                            {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredAgents.length > 0 ? (
+                    filteredAgents.map((agent) => (
+                      <tr key={agent.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-8 w-8 lg:h-10 lg:w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-sm lg:text-base">
+                              {agent.name ? agent.name.charAt(0).toUpperCase() : 'A'}
+                            </div>
+                            <div className="ml-3 lg:ml-4">
+                              <div className="text-sm font-medium text-gray-900">{agent.name}</div>
+                              <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                            </div>
                           </div>
-                          <div className="ml-3 lg:ml-4">
-                            <div className="text-sm font-medium text-gray-900">{agent.name}</div>
-                            <div className="text-xs text-gray-500">ID: {agent.id}</div>
+                        </td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-700">
+                            <Mail size={14} className="mr-2 text-gray-400" />
+                            {agent.email}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center text-sm text-gray-700">
-                          <Mail size={14} className="mr-2 text-gray-400" />
-                          {agent.email}
-                        </div>
-                      </td>
-                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center text-sm text-gray-700">
-                          <Globe size={14} className="mr-2 text-gray-400" />
-                          {agent.country_name || agent.country || 'Non spécifié'}
-                        </div>
-                      </td>
-                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
-                      </td>
-                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <Link
-                            to={`/admin/agents/${agent.id}`}
-                            className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
-                            title="Voir détails"
-                          >
-                            <Eye size={16} />
-                          </Link>
-                          <button
-                            onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
-                            className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
-                            title="Modifier"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button
-                            onClick={() => deleteAgent(agent.id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                        </td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-700">
+                            <Globe size={14} className="mr-2 text-gray-400" />
+                            {agent.country_name || agent.country || 'Non spécifié'}
+                          </div>
+                        </td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(agent.is_active !== undefined ? agent.is_active : agent.status)}
+                        </td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <Link
+                              to={`/admin/agents/${agent.id}`}
+                              className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
+                              title="Voir détails"
+                            >
+                              <Eye size={16} />
+                            </Link>
+                            <button
+                              onClick={() => setModal({ mode: "edit", agent: { ...agent, password: "" } })}
+                              className="text-yellow-600 hover:text-yellow-900 p-1 rounded hover:bg-yellow-50 transition-colors"
+                              title="Modifier"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => deleteAgent(agent.id)}
+                              className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-8 text-center">
+                        <div className="flex flex-col items-center justify-center">
+                          <User size={32} className="text-gray-300 mb-2" />
+                          <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {searchTerm || statusFilter !== 'all' 
+                              ? "Essayez de modifier vos critères de recherche" 
+                              : "Commencez par ajouter votre premier agent"}
+                          </p>
                         </div>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <User size={32} className="text-gray-300 mb-2" />
-                        <p className="text-base font-medium text-gray-500">Aucun agent trouvé</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {searchTerm || statusFilter !== 'all' 
-                            ? "Essayez de modifier vos critères de recherche" 
-                            : "Commencez par ajouter votre premier agent"}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Modal d'ajout/modification */}

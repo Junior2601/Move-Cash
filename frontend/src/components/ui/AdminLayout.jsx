@@ -77,6 +77,13 @@ export default function AdminLayout() {
           >
             Transactions
           </Link>
+          <Link 
+            to="/admin/historiques" 
+            className="py-2 px-3 rounded hover:bg-slate-100 text-sm lg:text-base"
+            onClick={() => setSidebarOpen(false)}
+          >
+            Historiques
+          </Link>
         </nav>
 
         <div className="mt-8">
