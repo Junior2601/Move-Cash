@@ -71,6 +71,13 @@ export default function AdminLayout() {
             Balances
           </Link>
           <Link 
+            to="/admin/numbers" 
+            className="py-2 px-3 rounded hover:bg-slate-100 text-sm lg:text-base"
+            onClick={() => setSidebarOpen(false)}
+          >
+            Numéros
+          </Link>
+          <Link 
             to="/admin/transactions" 
             className="py-2 px-3 rounded hover:bg-slate-100 text-sm lg:text-base"
             onClick={() => setSidebarOpen(false)}

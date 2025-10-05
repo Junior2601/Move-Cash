@@ -148,12 +148,12 @@ export const updateRateById = async (id, rate, commission_percent, is_active, ad
 
     // 🔎 Log de modification de taux
     await logHistory({
-      action_type: 'rate_updated',
+      action_type: 'Modification Taux',
       actor_type: 'admin',
       actor_id: admin_id,
       entity_type: 'rate',
       entity_id: id,
-      description: `Taux de change modifié: ${oldRate.from_currency_code} → ${oldRate.to_currency_code}`,
+      description: `Taux de change modifié: ${oldRate.from_currency_code} → ${oldRate.to_currency_code} = ${rate}`,
       metadata: { 
         from_currency: oldRate.from_currency_code,
         to_currency: oldRate.to_currency_code,

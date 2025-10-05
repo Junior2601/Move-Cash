@@ -48,7 +48,7 @@ export default function TransactionsList() {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('adminToken');
+      const token = localStorage.getItem('admin_token');
       
       if (!token) {
         setError("Token d'authentification manquant. Veuillez vous connecter.");

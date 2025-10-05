@@ -42,7 +42,8 @@ export default function TransactionForm({ onTransactionComplete }) {
         const methodsByCountry = {};
         for (const country of countriesResponse.data) {
           try {
-            const methodsResponse = await api.get(`/payment-methods/country/${country.id}`);
+            // CORRECTION : Utiliser le bon endpoint
+            const methodsResponse = await api.get(`/payment_method/country/${country.id}`);
             methodsByCountry[country.id] = methodsResponse.data || [];
           } catch (error) {
             console.error(`Erreur lors du chargement des méthodes pour ${country.name}:`, error);
@@ -68,16 +69,19 @@ export default function TransactionForm({ onTransactionComplete }) {
     const loadPaymentMethods = async (countryId) => {
       if (!countryId) return;
       
-      if (!paymentMethods[countryId]) {
-        try {
-          const response = await api.get(`/payment-methods/country/${countryId}`);
-          setPaymentMethods(prev => ({
-            ...prev,
-            [countryId]: response.data
-          }));
-        } catch (error) {
-          console.error(`Erreur lors du chargement des méthodes pour le pays ${countryId}:`, error);
-        }
+      try {
+        // CORRECTION : Utiliser le bon endpoint
+        const response = await api.get(`/payment_method/country/${countryId}`);
+        setPaymentMethods(prev => ({
+          ...prev,
+          [countryId]: response.data
+        }));
+      } catch (error) {
+        console.error(`Erreur lors du chargement des méthodes pour le pays ${countryId}:`, error);
+        setPaymentMethods(prev => ({
+          ...prev,
+          [countryId]: []
+        }));
       }
     };
 
@@ -88,7 +92,7 @@ export default function TransactionForm({ onTransactionComplete }) {
     if (formData.receiverCountryId) {
       loadPaymentMethods(formData.receiverCountryId);
     }
-  }, [formData.senderCountryId, formData.receiverCountryId, paymentMethods]);
+  }, [formData.senderCountryId, formData.receiverCountryId]);
 
   // Fonctions utilitaires
   const getCountryById = (id) => {
@@ -218,6 +222,12 @@ export default function TransactionForm({ onTransactionComplete }) {
     }).format(amount);
   };
 
+  // Fonction pour formater le numéro de téléphone avec le préfixe
+  const formatPhoneNumber = (phone, country) => {
+    if (!country || !country.phone_prefix) return phone;
+    return `${country.phone_prefix} ${phone}`;
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center py-12">
@@ -285,6 +295,11 @@ export default function TransactionForm({ onTransactionComplete }) {
                 />
               </div>
               {errors.senderPhone && <p className="mt-1 text-sm text-red-600">{errors.senderPhone}</p>}
+              {formData.senderPhone && senderCountry && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Format: {formatPhoneNumber(formData.senderPhone, senderCountry)}
+                </p>
+              )}
             </div>
 
             <div>
@@ -300,9 +315,17 @@ export default function TransactionForm({ onTransactionComplete }) {
                 disabled={!formData.senderCountryId}
               >
                 <option value="">Sélectionner un moyen</option>
-                {senderPaymentMethods.map(method => (
-                  <option key={method.id} value={method.id}>{method.method}</option>
-                ))}
+                {senderPaymentMethods.length > 0 ? (
+                  senderPaymentMethods.map(method => (
+                    <option key={method.id} value={method.id}>
+                      {method.method}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    {formData.senderCountryId ? 'Aucune méthode disponible' : 'Sélectionnez d\'abord un pays'}
+                  </option>
+                )}
               </select>
               {errors.senderPaymentMethodId && <p className="mt-1 text-sm text-red-600">{errors.senderPaymentMethodId}</p>}
             </div>
@@ -355,11 +378,14 @@ export default function TransactionForm({ onTransactionComplete }) {
                 } focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20`}
               >
                 <option value="">Sélectionner un pays</option>
-                {countries.filter(c => c.id !== parseInt(formData.senderCountryId)).map(country => (
-                  <option key={country.id} value={country.id}>
-                    {country.name} ({country.currency_code})
-                  </option>
-                ))}
+                {countries
+                  .filter(c => c.id !== parseInt(formData.senderCountryId))
+                  .map(country => (
+                    <option key={country.id} value={country.id}>
+                      {country.name} ({country.currency_code})
+                    </option>
+                  ))
+                }
               </select>
               {errors.receiverCountryId && <p className="mt-1 text-sm text-red-600">{errors.receiverCountryId}</p>}
             </div>
@@ -383,6 +409,11 @@ export default function TransactionForm({ onTransactionComplete }) {
                 />
               </div>
               {errors.receiverPhone && <p className="mt-1 text-sm text-red-600">{errors.receiverPhone}</p>}
+              {formData.receiverPhone && receiverCountry && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Format: {formatPhoneNumber(formData.receiverPhone, receiverCountry)}
+                </p>
+              )}
             </div>
 
             <div>
@@ -398,9 +429,17 @@ export default function TransactionForm({ onTransactionComplete }) {
                 disabled={!formData.receiverCountryId}
               >
                 <option value="">Sélectionner un moyen</option>
-                {receiverPaymentMethods.map(method => (
-                  <option key={method.id} value={method.id}>{method.method}</option>
-                ))}
+                {receiverPaymentMethods.length > 0 ? (
+                  receiverPaymentMethods.map(method => (
+                    <option key={method.id} value={method.id}>
+                      {method.method}
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>
+                    {formData.receiverCountryId ? 'Aucune méthode disponible' : 'Sélectionnez d\'abord un pays'}
+                  </option>
+                )}
               </select>
               {errors.receiverPaymentMethodId && <p className="mt-1 text-sm text-red-600">{errors.receiverPaymentMethodId}</p>}
             </div>
@@ -423,6 +462,7 @@ export default function TransactionForm({ onTransactionComplete }) {
           </div>
         </div>
 
+        {/* Résumé de la transaction */}
         <div className="bg-blue-50 rounded-lg p-6">
           <h5 className="font-semibold text-blue-900 mb-2">Résumé de la transaction</h5>
           <div className="grid grid-cols-2 gap-4 text-sm">
@@ -438,9 +478,16 @@ export default function TransactionForm({ onTransactionComplete }) {
                 {receiverCountry ? formatCurrency(receivedAmount, receiverCountry.currency_code) : '0'}
               </span>
             </div>
+            <div className="col-span-2">
+              <span className="text-gray-600">Frais:</span>
+              <span className="font-semibold ml-2">
+                {senderCountry ? formatCurrency(0, senderCountry.currency_code) : '0'}
+              </span>
+            </div>
           </div>
         </div>
 
+        {/* Bouton de soumission */}
         <button
           type="submit"
           disabled={isSubmitting || Object.keys(errors).length > 0}

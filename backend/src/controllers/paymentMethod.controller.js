@@ -6,63 +6,64 @@ import {
   deletePaymentMethodById
 } from '../models/paymentMethod.repository.js';
 
-// Liste publique des moyens de paiement actifs pour un pays
+// Récupérer les méthodes de paiement actives par pays
 export const getActivePaymentMethodsByCountry = async (req, res) => {
-  const { country_id } = req.params;
   try {
-    const methods = await findActivePaymentMethodsByCountry(country_id);
-    res.json(methods);
+    const { country_id } = req.params;
+    
+    if (!country_id) {
+      return res.status(400).json({ error: 'ID du pays requis' });
+    }
+
+    const paymentMethods = await findActivePaymentMethodsByCountry(country_id);
+    res.json(paymentMethods);
   } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la récupération des moyens de paiement", error: error.message });
+    console.error('Erreur contrôleur méthodes paiement:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
 
-// Liste complète (admin)
+// Autres fonctions du contrôleur...
 export const getAllPaymentMethods = async (req, res) => {
   try {
-    const methods = await findAllPaymentMethods();
-    res.json(methods);
+    const paymentMethods = await findAllPaymentMethods();
+    res.json(paymentMethods);
   } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la récupération des moyens de paiement", error: error.message });
+    console.error('Erreur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
 
-// Ajouter un moyen de paiement (admin)
 export const addPaymentMethod = async (req, res) => {
-  const { country_id, method } = req.body;
   try {
-    const newMethod = await createPaymentMethod(country_id, method);
-    res.status(201).json({ message: "Moyen de paiement ajouté avec succès", payment_method: newMethod });
+    const { country_id, method, currency_id } = req.body;
+    const paymentMethod = await createPaymentMethod(country_id, method, currency_id);
+    res.status(201).json(paymentMethod);
   } catch (error) {
-    res.status(500).json({ message: "Erreur lors de l'ajout du moyen de paiement", error: error.message });
+    console.error('Erreur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
 
-// Mettre à jour un moyen de paiement (admin)
 export const updatePaymentMethod = async (req, res) => {
-  const { id } = req.params;
-  const { method, is_active } = req.body;
   try {
-    const updatedMethod = await updatePaymentMethodById(id, method, is_active);
-    if (!updatedMethod) {
-      return res.status(404).json({ message: "Moyen de paiement non trouvé" });
-    }
-    res.json({ message: "Moyen de paiement mis à jour avec succès", payment_method: updatedMethod });
+    const { id } = req.params;
+    const { method, is_active } = req.body;
+    const paymentMethod = await updatePaymentMethodById(id, method, is_active);
+    res.json(paymentMethod);
   } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la mise à jour du moyen de paiement", error: error.message });
+    console.error('Erreur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };
 
-// Supprimer un moyen de paiement (admin)
 export const deletePaymentMethod = async (req, res) => {
-  const { id } = req.params;
   try {
-    const deletedMethod = await deletePaymentMethodById(id);
-    if (!deletedMethod) {
-      return res.status(404).json({ message: "Moyen de paiement non trouvé" });
-    }
-    res.json({ message: "Moyen de paiement supprimé avec succès" });
+    const { id } = req.params;
+    const paymentMethod = await deletePaymentMethodById(id);
+    res.json(paymentMethod);
   } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la suppression du moyen de paiement", error: error.message });
+    console.error('Erreur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 };

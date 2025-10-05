@@ -28,7 +28,7 @@ export default function CountriesList() {
       
       // Ensuite, charger les devises séparément pour éviter que l'échec d'une requête bloque tout
       try {
-        const currenciesRes = await api.get('/currencies/active');
+        const currenciesRes = await api.get('/currency/active');
         setCurrencies(currenciesRes.data || []);
       } catch (currencyError) {
         console.warn('Erreur lors du chargement des devises:', currencyError);

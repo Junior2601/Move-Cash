@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { pool } from '../config/db.js';
 import {
   getAgentByEmail,
   createAgent,
@@ -12,8 +13,10 @@ import {
   activateAgent,
   deleteAgent,
   countAgents,
+  countAgentsByCountry,
   searchAgents,
-  getAgentsByCountry
+  getAgentsByCountry,
+  getAgentsByCountryCode
 } from '../models/agent.repository.js';
 
 dotenv.config();
@@ -85,15 +88,24 @@ export const getAgents = async (req, res) => {
     const offset = (page - 1) * limit;
 
     let agents;
+    let total;
+
     if (search) {
       agents = await searchAgents(search, limit, offset);
+      total = await countAgents();
     } else if (country_id) {
+      // Vérifier si le pays existe
+      const country = await pool.query('SELECT id, name FROM countries WHERE id = $1', [country_id]);
+      if (country.rows.length === 0) {
+        return res.status(404).json({ message: 'Pays non trouvé' });
+      }
       agents = await getAgentsByCountry(country_id, limit, offset);
+      total = await countAgentsByCountry(country_id);
     } else {
       agents = await getAllAgents(limit, offset);
+      total = await countAgents();
     }
 
-    const total = await countAgents();
     const totalPages = Math.ceil(total / limit);
 
     res.json({
@@ -122,6 +134,81 @@ export const getAgent = async (req, res) => {
     }
 
     res.json({ agent });
+  } catch (err) {
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};
+
+// Récupérer les agents par ID de pays
+export const getAgentsByCountryIdController = async (req, res) => {
+  try {
+    const { country_id } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Validation de l'ID du pays
+    if (!country_id || isNaN(country_id)) {
+      return res.status(400).json({ message: 'ID de pays invalide' });
+    }
+
+    // Vérifier si le pays existe
+    const country = await pool.query('SELECT id, name, code FROM countries WHERE id = $1', [country_id]);
+    if (country.rows.length === 0) {
+      return res.status(404).json({ message: 'Pays non trouvé' });
+    }
+
+    const agents = await getAgentsByCountry(country_id, limit, offset);
+    const total = await countAgentsByCountry(country_id);
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      country: country.rows[0],
+      agents,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalAgents: total,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};
+
+// Récupérer les agents par code de pays
+export const getAgentsByCountryCodeController = async (req, res) => {
+  try {
+    const { country_code } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Vérifier si le pays existe et récupérer son ID
+    const country = await pool.query(
+      'SELECT id, name, code FROM countries WHERE code = $1',
+      [country_code.toUpperCase()]
+    );
+    
+    if (country.rows.length === 0) {
+      return res.status(404).json({ message: 'Pays non trouvé' });
+    }
+
+    const agents = await getAgentsByCountryCode(country_code, limit, offset);
+    const total = await countAgentsByCountry(country.rows[0].id);
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      country: country.rows[0],
+      agents,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalAgents: total,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }

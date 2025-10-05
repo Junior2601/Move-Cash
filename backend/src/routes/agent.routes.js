@@ -12,7 +12,9 @@ import {
   changeAgentPassword,
   deactivateAgentAccount,
   activateAgentAccount,
-  deleteAgentAccount
+  deleteAgentAccount,
+  getAgentsByCountryIdController,      // Noms changés ici
+  getAgentsByCountryCodeController
 } from '../controllers/agent.controller.js';
 
 const router = Router();
@@ -34,5 +36,7 @@ router.put('/:id/password', verifyAdminToken, changeAgentPassword);
 router.put('/:id/deactivate', verifyAdminToken, deactivateAgentAccount);
 router.put('/:id/activate', verifyAdminToken, activateAgentAccount);
 router.delete('/:id', verifyAdminToken, deleteAgentAccount);
+router.get('/country/:country_id', verifyAdminToken, getAgentsByCountryIdController);
+router.get('/country/code/:country_code', verifyAdminToken, getAgentsByCountryCodeController);
 
 export default router;

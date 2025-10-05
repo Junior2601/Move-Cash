@@ -4,7 +4,9 @@ import {
   findAllAuthorizedNumbers,
   createAuthorizedNumber,
   updateAuthorizedNumberById,
-  deleteAuthorizedNumberById
+  deleteAuthorizedNumberById,
+  findAuthorizedNumberById,
+  findAllActiveAuthorizedNumbers
 } from '../models/authorizedNumber.repository.js';
 
 // Liste des numéros d'un agent
@@ -65,5 +67,29 @@ export const deleteAuthorizedNumber = async (req, res) => {
     res.json({ message: "Numéro autorisé supprimé avec succès" });
   } catch (error) {
     res.status(500).json({ message: "Erreur lors de la suppression du numéro autorisé", error: error.message });
+  }
+};
+
+// Afficher un numéro spécifique (public)
+export const getAuthorizedNumberPublic = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const number = await findAuthorizedNumberById(id);
+    if (!number) {
+      return res.status(404).json({ message: "Numéro autorisé non trouvé ou inactif" });
+    }
+    res.json(number);
+  } catch (error) {
+    res.status(500).json({ message: "Erreur lors de la récupération du numéro autorisé", error: error.message });
+  }
+};
+
+// Lister tous les numéros actifs (public)
+export const getAllActiveAuthorizedNumbers = async (req, res) => {
+  try {
+    const numbers = await findAllActiveAuthorizedNumbers();
+    res.json(numbers);
+  } catch (error) {
+    res.status(500).json({ message: "Erreur lors de la récupération des numéros autorisés", error: error.message });
   }
 };

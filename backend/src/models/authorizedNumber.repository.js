@@ -1,5 +1,33 @@
 import {pool} from '../config/db.js';
 
+
+export const findAuthorizedNumberById = async (id) => {
+  const result = await pool.query(
+    `SELECT an.*, a.name AS agent_name, c.name AS country, pm.method AS payment_method
+     FROM authorized_numbers an
+     JOIN agents a ON an.agent_id = a.id
+     JOIN countries c ON an.country_id = c.id
+     JOIN payment_methods pm ON an.payment_method_id = pm.id
+     WHERE an.id = $1 AND an.is_active = true`,
+    [id]
+  );
+  return result.rows[0];
+};
+
+// Lister tous les numéros actifs (public)
+export const findAllActiveAuthorizedNumbers = async () => {
+  const result = await pool.query(
+    `SELECT an.*, a.name AS agent_name, c.name AS country, pm.method AS payment_method
+     FROM authorized_numbers an
+     JOIN agents a ON an.agent_id = a.id
+     JOIN countries c ON an.country_id = c.id
+     JOIN payment_methods pm ON an.payment_method_id = pm.id
+     WHERE an.is_active = true
+     ORDER BY an.created_at DESC`
+  );
+  return result.rows;
+};
+
 // Lister tous les numéros autorisés d'un agent
 export const findAuthorizedNumbersByAgent = async (agent_id) => {
   const result = await pool.query(

@@ -4,11 +4,17 @@ import {
   getAllAuthorizedNumbers,
   addAuthorizedNumber,
   updateAuthorizedNumber,
-  deleteAuthorizedNumber
+  deleteAuthorizedNumber,
+  getAuthorizedNumberPublic,           
+  getAllActiveAuthorizedNumbers      
 } from '../controllers/authorizedNumber.controller.js';
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
+
+// Routes publiques (sans authentification)
+router.get('/public', getAllActiveAuthorizedNumbers);           // Tous les numéros actifs
+router.get('/public/:id', getAuthorizedNumberPublic);           // Un numéro spécifique
 
 // Agent : voir ses propres numéros
 router.get('/agent/:agent_id', verifyAgentToken, getAuthorizedNumbersByAgent);
