@@ -8,6 +8,7 @@ import AgentDetail from './pages/admin/AgentDetail';
 import CountriesList from './pages/admin/CountriesList';
 import RatesList from './pages/admin/RatesList';
 import BalancesList from './pages/admin/BalancesList';
+import PayementMethodList from './pages/admin/PaymentMethodsList';
 import AuthorizedNumbersList from './pages/admin/AuthorizedNumbersList';
 import TransactionsList from './pages/admin/TransactionsList';
 import HistoryList from './pages/admin/HistoryList';
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="countries" element={<CountriesList />} />
             <Route path="rates" element={<RatesList />} />
             <Route path="balances" element={<BalancesList />} />
+            <Route path="payements" element={<PayementMethodList />} />
             <Route path="numbers" element={<AuthorizedNumbersList />} />
             <Route path="transactions" element={<TransactionsList />} />
             <Route path="historiques" element={<HistoryList />} />

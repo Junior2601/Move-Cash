@@ -3,18 +3,20 @@ import {
   FileDown, AlertCircle, RefreshCw, Eye, Calendar, X, 
   UserPlus, UserCog, BarChart3, DollarSign, TrendingUp, TrendingDown,
   Clock, AlertTriangle, CheckCircle, ArrowRightLeft, UserCheck,
-  Shield, CreditCard, Globe, Mail, Phone, Settings
+  Shield, CreditCard, Globe, Mail, Phone, Settings, Filter, ChevronDown, ChevronUp
 } from "lucide-react";
 import api from "../../api/api";
 
 export default function HistoryList() {
   const [history, setHistory] = useState([]);
+  const [allHistory, setAllHistory] = useState([]); // Stocke toutes les données pour le filtrage côté client
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [rawResponse, setRawResponse] = useState(null);
   const [showRawData, setShowRawData] = useState(false);
   const [dateFilter, setDateFilter] = useState("");
   const [actionTypeFilter, setActionTypeFilter] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   // Mapping des icônes et couleurs par type d'action
   const actionIcons = {
@@ -96,27 +98,68 @@ export default function HistoryList() {
     return item.entity_type || "Système";
   };
 
+  // Fonction pour formater la date en YYYY-MM-DD
+  const formatDateToYMD = (dateString) => {
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0];
+  };
+
+  // Fonction pour comparer les dates (ignorer l'heure)
+  const isSameDate = (date1, date2) => {
+    if (!date1 || !date2) return false;
+    return formatDateToYMD(date1) === formatDateToYMD(date2);
+  };
+
+  // Appliquer les filtres
+  const applyFilters = () => {
+    if (!allHistory.length) return;
+
+    let filtered = [...allHistory];
+
+    // Filtre par type d'action
+    if (actionTypeFilter) {
+      filtered = filtered.filter(item => item.action_type === actionTypeFilter);
+    }
+
+    // Filtre par date
+    if (dateFilter) {
+      filtered = filtered.filter(item => {
+        const itemDate = formatDateToYMD(item.created_at);
+        return itemDate === dateFilter;
+      });
+    }
+
+    setHistory(filtered);
+  };
+
   const fetchHistory = async () => {
     setLoading(true);
     setError(null);
     setRawResponse(null);
     try {
-      const params = {};
-      if (dateFilter) params.date = dateFilter;
-      if (actionTypeFilter) params.action_type = actionTypeFilter;
-
-      const response = await api.get("/history", { params });
+      // Charger toutes les données sans filtre initial
+      const response = await api.get("/history");
       console.log("Réponse complète de l'API:", response);
       setRawResponse(response);
       
+      let historyData = [];
       if (response.data && response.data.items && Array.isArray(response.data.items)) {
-        setHistory(response.data.items);
+        historyData = response.data.items;
       } else if (response.data && Array.isArray(response.data)) {
-        setHistory(response.data);
+        historyData = response.data;
       } else {
         setError("Format de données invalide");
         setHistory([]);
+        setAllHistory([]);
+        return;
       }
+
+      // Trier par date décroissante
+      historyData.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      
+      setAllHistory(historyData);
+      setHistory(historyData);
+      
     } catch (err) {
       console.error("Erreur lors du chargement de l'historique :", err);
       if (err.response?.status === 403) {
@@ -129,6 +172,7 @@ export default function HistoryList() {
         setError("Erreur lors du chargement de l'historique");
       }
       setHistory([]);
+      setAllHistory([]);
     } finally {
       setLoading(false);
     }
@@ -138,14 +182,24 @@ export default function HistoryList() {
     fetchHistory(); 
   }, []);
 
+  // Appliquer les filtres quand les états de filtre changent
+  useEffect(() => {
+    if (allHistory.length > 0) {
+      applyFilters();
+    }
+  }, [dateFilter, actionTypeFilter, allHistory]);
+
   const handleFilter = () => {
-    fetchHistory();
+    applyFilters();
+    setShowFilters(false);
   };
 
   const clearFilters = () => {
     setDateFilter("");
     setActionTypeFilter("");
-    fetchHistory();
+    // Réappliquer les filtres (qui va tout afficher puisque les filtres sont vides)
+    applyFilters();
+    setShowFilters(false);
   };
 
   const exportCSV = () => {
@@ -160,7 +214,7 @@ export default function HistoryList() {
       h.entity_type || 'N/A',
       h.entity_id || 'N/A',
       h.description,
-      h.created_at
+      new Date(h.created_at).toLocaleString('fr-FR')
     ]);
 
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -188,11 +242,11 @@ export default function HistoryList() {
 
   if (loading) {
     return (
-      <div className="p-6 bg-white rounded-lg shadow">
-        <div className="flex justify-center items-center h-64">
+      <div className="p-4 bg-white rounded-lg shadow">
+        <div className="flex justify-center items-center h-48">
           <div className="text-center">
-            <RefreshCw className="animate-spin w-8 h-8 text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600">Chargement de l'historique...</p>
+            <RefreshCw className="animate-spin w-8 h-8 text-blue-600 mx-auto mb-3" />
+            <p className="text-gray-600 text-sm">Chargement de l'historique...</p>
           </div>
         </div>
       </div>
@@ -200,214 +254,345 @@ export default function HistoryList() {
   }
 
   return (
-    <div className="p-6 bg-white rounded-lg shadow">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-2xl font-semibold">📜 Historique des activités</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowRawData(!showRawData)}
-            className="flex items-center bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            <Eye className="mr-2 w-4 h-4" /> Données brutes
-          </button>
-          <button
-            onClick={fetchHistory}
-            className="flex items-center bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-          >
-            <RefreshCw className="mr-2 w-4 h-4" /> Actualiser
-          </button>
-          <button
-            onClick={exportCSV}
-            disabled={history.length === 0}
-            className="flex items-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            <FileDown className="mr-2 w-4 h-4" /> Exporter CSV
-          </button>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* En-tête */}
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-900 mb-1">Historique des activités</h1>
+          <p className="text-gray-600 text-sm">Suivi complet des actions du système</p>
         </div>
-      </div>
 
-      {/* Filtres */}
-      <div className="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
-        <h3 className="font-semibold text-gray-700 mb-3 flex items-center">
-          <Calendar className="w-5 h-5 mr-2" /> Filtres de recherche
-        </h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Date spécifique
-            </label>
-            <input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+        {/* Carte principale */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          {/* En-tête avec actions */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Clock className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-gray-800">Activités récentes</h2>
+                  <p className="text-gray-500 text-sm">
+                    {history.length} activité(s){hasActiveFilters && ' filtrée(s)'} sur {allHistory.length} au total
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                {/* Bouton Filtres mobile */}
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex-1 sm:flex-none justify-center"
+                >
+                  <Filter className="w-4 h-4" />
+                  <span className="sm:hidden">Filtres</span>
+                  <span className="hidden sm:inline">Filtres</span>
+                  {showFilters ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                <button
+                  onClick={() => setShowRawData(!showRawData)}
+                  className="p-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  title="Données brutes"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={fetchHistory}
+                  className="p-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  title="Actualiser"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={exportCSV}
+                  disabled={history.length === 0}
+                  className="p-2 border border-blue-600 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:border-gray-400 disabled:cursor-not-allowed"
+                  title="Exporter CSV"
+                >
+                  <FileDown className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Type d'action
-            </label>
-            <select
-              value={actionTypeFilter}
-              onChange={(e) => setActionTypeFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Tous les types</option>
-              {actionTypes.map(type => (
-                <option key={type} value={type}>
-                  {formatActionTitle(type)}
-                </option>
-              ))}
-            </select>
+          {/* Filtres - Version mobile dépliante */}
+          <div className={`${showFilters ? 'block' : 'hidden'} lg:block`}>
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="lg:hidden mb-3">
+                <h3 className="font-semibold text-gray-700 flex items-center">
+                  <Filter className="w-4 h-4 mr-2" /> Filtres de recherche
+                </h3>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date spécifique
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Type d'action
+                  </label>
+                  <select
+                    value={actionTypeFilter}
+                    onChange={(e) => setActionTypeFilter(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">Tous les types</option>
+                    {actionTypes.map(type => (
+                      <option key={type} value={type}>
+                        {formatActionTitle(type)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <button
+                    onClick={handleFilter}
+                    className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Appliquer
+                  </button>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm"
+                    >
+                      <X className="w-4 h-4" />
+                      Effacer
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <div className="mt-3 p-2 bg-blue-50 rounded-lg">
+                  <p className="text-xs text-blue-700">
+                    <strong>Filtres actifs:</strong>
+                    {dateFilter && ` Date: ${new Date(dateFilter).toLocaleDateString('fr-FR')}`}
+                    {actionTypeFilter && ` Type: ${formatActionTitle(actionTypeFilter)}`}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-end gap-2">
-            <button
-              onClick={handleFilter}
-              className="flex items-center bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-            >
-              <Calendar className="mr-2 w-4 h-4" /> Appliquer
-            </button>
-            {hasActiveFilters && (
+          {error && (
+            <div className="m-4 bg-red-50 border border-red-200 p-3 rounded-lg">
+              <div className="flex items-center">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                <h3 className="text-red-800 font-semibold text-sm">Erreur</h3>
+              </div>
+              <p className="text-red-600 mt-1 text-sm">{error}</p>
               <button
-                onClick={clearFilters}
-                className="flex items-center bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                onClick={fetchHistory}
+                className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700"
               >
-                <X className="mr-2 w-4 h-4" /> Effacer
+                Réessayer
               </button>
+            </div>
+          )}
+
+          {showRawData && rawResponse && (
+            <div className="m-4 p-3 bg-gray-100 rounded-lg">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-semibold text-sm">Données brutes de l'API :</h3>
+                <button
+                  onClick={() => setShowRawData(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <pre className="text-xs overflow-auto p-2 bg-white border rounded max-h-60">
+                {JSON.stringify(rawResponse.data, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Contenu principal */}
+          <div className="p-4">
+            {history.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-400 mb-3">
+                  <Clock className="w-12 h-12 mx-auto" />
+                </div>
+                <p className="text-gray-500 text-sm mb-2">
+                  {hasActiveFilters 
+                    ? "Aucun résultat pour les filtres sélectionnés" 
+                    : "Aucune activité disponible"
+                  }
+                </p>
+                <div className="flex gap-2 justify-center">
+                  {!error && (
+                    <button
+                      onClick={fetchHistory}
+                      className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
+                    >
+                      Actualiser
+                    </button>
+                  )}
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Liste des activités - Version mobile */}
+                <div className="lg:hidden space-y-3">
+                  {history.map((item) => {
+                    const IconComponent = (actionIcons[item.action_type] || actionIcons.default).icon;
+                    const iconColor = (actionIcons[item.action_type] || actionIcons.default).color;
+                    const priority = getPriority(item.action_type);
+
+                    return (
+                      <div key={item.id} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div className="flex items-start gap-3">
+                          {/* Icône ronde colorée */}
+                          <div className={`p-2 rounded-full ${iconColor} flex-shrink-0`}>
+                            <IconComponent className="w-4 h-4" />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between mb-1">
+                              <h3 className="font-semibold text-gray-800 text-sm leading-tight">
+                                {formatActionTitle(item.action_type)}
+                              </h3>
+                              {/* Badge de priorité */}
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${priority.color} flex-shrink-0 ml-2`}>
+                                {priority.level}
+                              </span>
+                            </div>
+
+                            <p className="text-gray-600 text-xs mb-1">
+                              {getSubtitle(item)}
+                            </p>
+
+                            <p className="text-gray-500 text-xs mb-2 line-clamp-2">
+                              {item.description}
+                            </p>
+
+                            <div className="flex items-center text-xs text-gray-400">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {new Date(item.created_at).toLocaleString('fr-FR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </div>
+
+                            {item.actor_type && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                Par: {item.actor_type} {item.actor_id ? `#${item.actor_id}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Tableau - Version desktop */}
+                <div className="hidden lg:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Action
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Détails
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Date
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Acteur
+                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Priorité
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {history.map((item) => {
+                        const IconComponent = (actionIcons[item.action_type] || actionIcons.default).icon;
+                        const iconColor = (actionIcons[item.action_type] || actionIcons.default).color;
+                        const priority = getPriority(item.action_type);
+
+                        return (
+                          <tr key={item.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className={`p-2 rounded-full ${iconColor} mr-3`}>
+                                  <IconComponent className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {formatActionTitle(item.action_type)}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {getSubtitle(item)}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="text-sm text-gray-900 max-w-xs">
+                                {item.description}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              {new Date(item.created_at).toLocaleString('fr-FR')}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                              {item.actor_type} {item.actor_id ? `#${item.actor_id}` : ''}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priority.color}`}>
+                                {priority.level}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="text-center pt-4">
+                  <p className="text-sm text-gray-500">
+                    Affichage de {history.length} activité(s){hasActiveFilters && ' filtrée(s)'} sur {allHistory.length} au total
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </div>
-
-        {hasActiveFilters && (
-          <div className="mt-3 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-700">
-              <strong>Filtres actifs:</strong>
-              {dateFilter && ` Date: ${new Date(dateFilter).toLocaleDateString('fr-FR')}`}
-              {actionTypeFilter && ` Type: ${formatActionTitle(actionTypeFilter)}`}
-            </p>
-          </div>
-        )}
       </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-6">
-          <div className="flex items-center">
-            <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
-            <h3 className="text-red-800 font-semibold">Erreur</h3>
-          </div>
-          <p className="text-red-600 mt-1">{error}</p>
-          <button
-            onClick={fetchHistory}
-            className="mt-3 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-          >
-            Réessayer
-          </button>
-        </div>
-      )}
-
-      {showRawData && rawResponse && (
-        <div className="mb-6 p-4 bg-gray-100 rounded-lg">
-          <h3 className="font-semibold mb-2">Données brutes de l'API :</h3>
-          <pre className="text-xs overflow-auto p-3 bg-white border rounded">
-            {JSON.stringify(rawResponse.data, null, 2)}
-          </pre>
-        </div>
-      )}
-
-      {history.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500">
-            {hasActiveFilters 
-              ? "Aucun résultat pour les filtres sélectionnés" 
-              : "Aucune activité disponible"
-            }
-          </p>
-          {!error && (
-            <button
-              onClick={fetchHistory}
-              className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              Actualiser
-            </button>
-          )}
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="mt-4 ml-3 bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-            >
-              Effacer les filtres
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-sm text-gray-500">
-              {history.length} activité(s) trouvée(s)
-              {dateFilter && ` pour le ${new Date(dateFilter).toLocaleDateString('fr-FR')}`}
-            </span>
-          </div>
-
-          {/* Liste des activités */}
-          {history.map((item) => {
-            const IconComponent = (actionIcons[item.action_type] || actionIcons.default).icon;
-            const iconColor = (actionIcons[item.action_type] || actionIcons.default).color;
-            const priority = getPriority(item.action_type);
-            const PriorityIcon = priority.icon;
-
-            return (
-              <div key={item.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3 flex-1">
-                    {/* Icône ronde colorée */}
-                    <div className={`p-3 rounded-full ${iconColor} flex-shrink-0`}>
-                      <IconComponent className="w-5 h-5" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-gray-800 text-sm">
-                          {formatActionTitle(item.action_type)}
-                        </h3>
-                        {/* Badge de priorité */}
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${priority.color}`}>
-                          <PriorityIcon className="w-3 h-3 mr-1" />
-                          {priority.level}
-                        </span>
-                      </div>
-
-                      <p className="text-gray-600 text-sm mb-2">
-                        {getSubtitle(item)}
-                      </p>
-
-                      <p className="text-gray-500 text-sm mb-3 line-clamp-2">
-                        {item.description}
-                      </p>
-
-                      <div className="flex items-center text-xs text-gray-400">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {new Date(item.created_at).toLocaleString('fr-FR')}
-                        {item.actor_type && (
-                          <span className="ml-3">
-                            Par: {item.actor_type} {item.actor_id ? `#${item.actor_id}` : ''}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="mt-4 text-sm text-gray-500 text-center">
-            Total: {history.length} activité(s) dans l'historique
-          </div>
-        </div>
-      )}
     </div>
   );
 }
