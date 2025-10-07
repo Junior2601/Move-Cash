@@ -43,7 +43,7 @@ export const createBalance = async (agent_id, currency_id, actor) => {
     if (balance) {
       // 🔎 Log de création de balance
       await logHistory({
-        action_type: 'balance_created',
+        action_type: 'Création Balance',
         actor_type: actor.role, // 'admin' ou 'system'
         actor_id: actor.id,
         entity_type: 'balance',
@@ -95,7 +95,7 @@ export const creditBalance = async (agent_id, currency_id, amount, actor, reason
     if (balance) {
       // 🔎 Log de crédit de balance
       await logHistory({
-        action_type: 'balance_credited',
+        action_type: 'Balance Créditée',
         actor_type: actor.role, // 'admin', 'system' ou 'agent'
         actor_id: actor.id,
         entity_type: 'balance',
@@ -163,7 +163,7 @@ export const debitBalance = async (agent_id, currency_id, amount, actor, reason 
 
     // 🔎 Log de débit de balance
     await logHistory({
-      action_type: 'balance_debited',
+      action_type: 'Balance Débitée',
       actor_type: actor.role, // 'admin', 'system' ou 'agent'
       actor_id: actor.id,
       entity_type: 'balance',
@@ -203,7 +203,7 @@ export const transferBalance = async (from_agent_id, to_agent_id, currency_id, a
 
     // 🔎 Log de transfert entre balances
     await logHistory({
-      action_type: 'balance_transfer',
+      action_type: 'Fonds transférés',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'balance_transfer',

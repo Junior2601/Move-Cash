@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Edit, Trash2, AlertCircle, Search, RefreshCw, Loader } from "lucide-react";
+import { 
+  Plus, Edit, Trash2, AlertCircle, Search, RefreshCw, Loader, 
+  Phone, User, Globe, CreditCard, Filter, X
+} from "lucide-react";
 
 export default function AuthorizedNumbersList() {
   const [numbers, setNumbers] = useState([]);
@@ -9,12 +12,17 @@ export default function AuthorizedNumbersList() {
     id: null, 
     number: "", 
     country_id: "", 
-    agent_id: "" 
+    agent_id: "",
+    payment_method_id: "",
+    label: "",
+    is_active: true
   });
   const [isEditing, setIsEditing] = useState(false);
   const [countries, setCountries] = useState([]);
-  const [agentsByCountry, setAgentsByCountry] = useState({});
+  const [agents, setAgents] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [filterLoading, setFilterLoading] = useState(false);
 
   // Vérifier l'authentification
@@ -29,62 +37,68 @@ export default function AuthorizedNumbersList() {
     }
     fetchNumbers();
     fetchCountries();
+    fetchAgents();
+    fetchPaymentMethods();
   }, []);
 
-  // Charger les agents quand un pays est sélectionné (même logique que le formulaire de transaction)
-  useEffect(() => {
-    const loadAgentsForCountry = async (countryId) => {
-      if (!countryId) return;
-      
-      // Si les agents pour ce pays sont déjà chargés, on ne recharge pas
-      if (agentsByCountry[countryId]) return;
-
-      try {
-        setFilterLoading(true);
-        
-        // Utiliser le même endpoint que dans vos routes d'agents
-        const res = await fetch(`http://localhost:5000/api/agent/country/${countryId}`, {
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json"
-          },
-        });
-
-        if (res.ok) {
-          const agentsData = await res.json();
-          setAgentsByCountry(prev => ({
-            ...prev,
-            [countryId]: Array.isArray(agentsData) ? agentsData : []
-          }));
-        } else {
-          console.error(`Erreur lors du chargement des agents pour le pays ${countryId}`);
-          setAgentsByCountry(prev => ({
-            ...prev,
-            [countryId]: []
-          }));
-        }
-      } catch (err) {
-        console.error(`Erreur lors du chargement des agents pour le pays ${countryId}:`, err);
-        setAgentsByCountry(prev => ({
-          ...prev,
-          [countryId]: []
-        }));
-      } finally {
-        setFilterLoading(false);
-      }
-    };
-
-    if (form.country_id) {
-      loadAgentsForCountry(form.country_id);
-    }
-  }, [form.country_id, token, agentsByCountry]);
-
-  // Fonction utilitaire pour récupérer les agents d'un pays
-  const getAgentsByCountryId = (countryId) => {
-    return agentsByCountry[countryId] || [];
+  // Obtenir l'indicatif du pays sélectionné
+  const getCountryPrefix = () => {
+    if (!form.country_id) return "";
+    const country = countries.find(c => c.id === parseInt(form.country_id));
+    return country ? country.phone_prefix : "";
   };
 
-  // Charger la liste des numéros autorisés avec les détails
+  // Formater automatiquement le numéro avec l'indicatif
+  const formatPhoneNumber = (input) => {
+    const prefix = getCountryPrefix();
+    
+    // Si on supprime tout le numéro, on vide le champ
+    if (!input) return "";
+    
+    // Si le numéro commence déjà par l'indicatif, on le conserve
+    if (prefix && input.startsWith(prefix)) {
+      return input;
+    }
+    
+    // Si on a un indicatif et que le numéro n'est pas vide, on l'ajoute
+    if (prefix && input) {
+      // Supprimer les espaces et caractères spéciaux pour la vérification
+      const cleanInput = input.replace(/\D/g, '');
+      const cleanPrefix = prefix.replace(/\D/g, '');
+      
+      // Si le numéro ne commence pas déjà par l'indicatif, on l'ajoute
+      if (!cleanInput.startsWith(cleanPrefix)) {
+        return prefix + input;
+      }
+    }
+    
+    return input;
+  };
+
+  // Gérer le changement de pays
+  const handleCountryChange = (countryId) => {
+    const newForm = { 
+      ...form, 
+      country_id: countryId,
+      agent_id: "" // Réinitialiser la sélection d'agent
+    };
+    
+    // Si on a déjà un numéro, reformater avec le nouvel indicatif
+    if (form.number) {
+      const currentNumberWithoutPrefix = form.number.replace(/^\+\d+\s?/, '');
+      newForm.number = formatPhoneNumber(currentNumberWithoutPrefix);
+    }
+    
+    setForm(newForm);
+  };
+
+  // Gérer le changement du numéro
+  const handleNumberChange = (input) => {
+    const formattedNumber = formatPhoneNumber(input);
+    setForm({ ...form, number: formattedNumber });
+  };
+
+  // Charger les numéros autorisés
   const fetchNumbers = async () => {
     try {
       setLoading(true);
@@ -108,48 +122,7 @@ export default function AuthorizedNumbersList() {
       }
 
       const data = await res.json();
-      
-      let numbersArray = [];
-      if (Array.isArray(data)) {
-        numbersArray = data;
-      } else if (data && Array.isArray(data.data)) {
-        numbersArray = data.data;
-      } else if (data && data.numbers) {
-        numbersArray = data.numbers;
-      } else {
-        numbersArray = [];
-      }
-      
-      // Enrichir les données avec les noms des pays et agents
-      const enrichedNumbers = await Promise.all(
-        numbersArray.map(async (num) => {
-          try {
-            // Récupérer les détails du pays
-            const country = countries.find(c => c.id === num.country_id) || 
-                           await fetchCountryDetails(num.country_id);
-            
-            // Récupérer les détails de l'agent
-            const agent = await fetchAgentDetails(num.agent_id);
-
-            return {
-              ...num,
-              country_name: country?.name || `Pays #${num.country_id}`,
-              country_code: country?.code || '',
-              agent_name: agent?.name || `Agent #${num.agent_id}`,
-              agent_email: agent?.email || ''
-            };
-          } catch (err) {
-            console.error("Erreur enrichissement données:", err);
-            return {
-              ...num,
-              country_name: `Pays #${num.country_id}`,
-              agent_name: `Agent #${num.agent_id}`
-            };
-          }
-        })
-      );
-      
-      setNumbers(enrichedNumbers);
+      setNumbers(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
       console.error("Erreur fetchNumbers:", err);
@@ -158,35 +131,6 @@ export default function AuthorizedNumbersList() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Fonctions pour récupérer les détails
-  const fetchCountryDetails = async (countryId) => {
-    try {
-      const res = await fetch(`http://localhost:5000/api/country/${countryId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.error("Erreur chargement pays:", err);
-    }
-    return null;
-  };
-
-  const fetchAgentDetails = async (agentId) => {
-    try {
-      const res = await fetch(`http://localhost:5000/api/agent/${agentId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.error("Erreur chargement agent:", err);
-    }
-    return null;
   };
 
   // Charger les pays
@@ -204,37 +148,71 @@ export default function AuthorizedNumbersList() {
     }
   };
 
-  // Gérer le changement de pays
-  const handleCountryChange = (countryId) => {
-    setForm({ 
-      ...form, 
-      country_id: countryId,
-      agent_id: "" // Réinitialiser la sélection d'agent
-    });
+  // Charger les agents
+  const fetchAgents = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/agent", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAgents(data?.agents || []);
+      }
+    } catch (err) {
+      console.error("Erreur chargement agents:", err);
+    }
+  };
+
+  // Charger les moyens de paiement
+  const fetchPaymentMethods = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/payment_method", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPaymentMethods(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Erreur chargement moyens de paiement:", err);
+    }
   };
 
   // Filtrer les numéros selon la recherche
   const filteredNumbers = numbers.filter(num =>
     num.number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    num.country_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     num.agent_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    num.agent_email?.toLowerCase().includes(searchTerm.toLowerCase())
+    num.country?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    num.payment_method?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    num.label?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Valider le formulaire
   const validateForm = () => {
     if (!form.number.trim()) {
-      setError("Le numéro de téléphone est requis");
-      return false;
-    }
-    if (!form.country_id) {
-      setError("Veuillez sélectionner un pays");
+      setError("Le numéro est requis");
       return false;
     }
     if (!form.agent_id) {
       setError("Veuillez sélectionner un agent");
       return false;
     }
+    if (!form.country_id) {
+      setError("Veuillez sélectionner un pays");
+      return false;
+    }
+    if (!form.payment_method_id) {
+      setError("Veuillez sélectionner un moyen de paiement");
+      return false;
+    }
+    
+    // Validation du format du numéro
+    const prefix = getCountryPrefix();
+    if (prefix && !form.number.startsWith(prefix)) {
+      setError(`Le numéro doit commencer par l'indicatif du pays (${prefix})`);
+      return false;
+    }
+    
     return true;
   };
 
@@ -259,8 +237,11 @@ export default function AuthorizedNumbersList() {
         },
         body: JSON.stringify({
           number: form.number.trim(),
+          agent_id: parseInt(form.agent_id),
           country_id: parseInt(form.country_id),
-          agent_id: parseInt(form.agent_id)
+          payment_method_id: parseInt(form.payment_method_id),
+          label: form.label.trim(),
+          is_active: form.is_active
         }),
       });
 
@@ -269,10 +250,18 @@ export default function AuthorizedNumbersList() {
         throw new Error(errorData.message || "Erreur lors de la sauvegarde");
       }
 
-      setForm({ id: null, number: "", country_id: "", agent_id: "" });
+      setForm({ 
+        id: null, 
+        number: "", 
+        country_id: "", 
+        agent_id: "",
+        payment_method_id: "",
+        label: "",
+        is_active: true
+      });
       setIsEditing(false);
       setError(null);
-      fetchNumbers(); // Recharger la liste
+      fetchNumbers();
     } catch (err) {
       setError("Erreur lors de la sauvegarde: " + err.message);
     }
@@ -308,16 +297,45 @@ export default function AuthorizedNumbersList() {
       id: num.id,
       number: num.number || "",
       country_id: num.country_id || "",
-      agent_id: num.agent_id || ""
+      agent_id: num.agent_id || "",
+      payment_method_id: num.payment_method_id || "",
+      label: num.label || "",
+      is_active: num.is_active !== undefined ? num.is_active : true
     });
     setIsEditing(true);
   };
 
   // Réinitialiser le formulaire
   const handleCancel = () => {
-    setForm({ id: null, number: "", country_id: "", agent_id: "" });
+    setForm({ 
+      id: null, 
+      number: "", 
+      country_id: "", 
+      agent_id: "",
+      payment_method_id: "",
+      label: "",
+      is_active: true
+    });
     setIsEditing(false);
     setError(null);
+  };
+
+  // Obtenir le nom de l'agent
+  const getAgentName = (agentId) => {
+    const agent = agents.find(a => a.id === agentId);
+    return agent ? `${agent.name} (${agent.email})` : "Agent inconnu";
+  };
+
+  // Obtenir le nom du pays
+  const getCountryName = (countryId) => {
+    const country = countries.find(c => c.id === countryId);
+    return country ? country.name : "Pays inconnu";
+  };
+
+  // Obtenir le nom du moyen de paiement
+  const getPaymentMethodName = (paymentMethodId) => {
+    const method = paymentMethods.find(p => p.id === paymentMethodId);
+    return method ? method.method : "Méthode inconnue";
   };
 
   // Rendu conditionnel pour l'authentification
@@ -358,169 +376,226 @@ export default function AuthorizedNumbersList() {
     );
   }
 
-  // Récupérer les agents pour le pays sélectionné
-  const currentCountryAgents = getAgentsByCountryId(form.country_id);
+  const countryPrefix = getCountryPrefix();
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-7xl mx-auto">
         {/* En-tête */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Numéros Autorisés</h1>
-              <p className="text-gray-600 mt-1">Gérez les numéros de téléphone autorisés pour les transactions</p>
-            </div>
-            <div className="mt-4 sm:mt-0 flex items-center space-x-3">
-              <button
-                onClick={fetchNumbers}
-                className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <RefreshCw size={18} />
-                <span>Rafraîchir</span>
-              </button>
-            </div>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-gray-900 mb-1">Numéros Autorisés</h1>
+          <p className="text-gray-600 text-sm">Gérez les numéros de compte autorisés pour les transactions</p>
         </div>
 
-        {/* Messages d'erreur */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start space-x-3">
-            <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-red-700 font-medium">Erreur</p>
-              <p className="text-red-600 text-sm mt-1">{error}</p>
-            </div>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-600 hover:text-red-800"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
         {/* Carte principale */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* En-tête de la carte avec recherche */}
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-              <div className="flex-1 max-w-md">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <input
-                    type="text"
-                    placeholder="Rechercher un numéro, pays ou agent..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="text-sm text-gray-600">
-                {filteredNumbers.length} numéro(s) trouvé(s) sur {numbers.length}
-              </div>
-            </div>
-          </div>
-
-          {/* Formulaire d'ajout/modification */}
-          <div className="p-6 border-b border-gray-200 bg-gray-50">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {isEditing ? "Modifier le numéro" : "Ajouter un nouveau numéro"}
-            </h3>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Numéro de téléphone *
-                </label>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          {/* En-tête de carte avec actions */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="flex flex-col space-y-3">
+              {/* Barre de recherche */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <input
                   type="text"
-                  placeholder="Ex: +33612345678"
-                  value={form.number}
-                  onChange={(e) => setForm({ ...form, number: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
+                  placeholder="Rechercher un numéro, agent, pays ou moyen de paiement..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Pays *
-                </label>
-                <select
-                  value={form.country_id}
-                  onChange={(e) => handleCountryChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
+
+              {/* Actions */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >
-                  <option value="">Sélectionner un pays</option>
-                  {countries.map(country => (
-                    <option key={country.id} value={country.id}>
-                      {country.name} ({country.code})
-                    </option>
-                  ))}
-                </select>
+                  <Filter className="h-4 w-4" />
+                  Filtres
+                  {showFilters && <X className="h-4 w-4" />}
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={fetchNumbers}
+                    className="p-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    title="Actualiser"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setForm({ 
+                        id: null, 
+                        number: "", 
+                        country_id: "", 
+                        agent_id: "",
+                        payment_method_id: "",
+                        label: "",
+                        is_active: true
+                      });
+                      setIsEditing(false);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus size={16} />
+                    Nouveau Numéro
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Agent *
-                </label>
-                <div className="relative">
+            </div>
+          </div>
+
+          {error && (
+            <div className="m-4 bg-red-50 border border-red-200 p-3 rounded-lg">
+              <div className="flex items-center">
+                <AlertCircle className="w-4 h-4 text-red-500 mr-2" />
+                <h3 className="text-red-800 font-semibold text-sm">Erreur</h3>
+              </div>
+              <p className="text-red-600 mt-1 text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Formulaire */}
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <h3 className="text-base font-semibold text-gray-900 mb-3">
+              {isEditing ? "Modifier le numéro" : "Ajouter un nouveau numéro"}
+            </h3>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Pays *
+                  </label>
+                  <select
+                    value={form.country_id}
+                    onChange={(e) => handleCountryChange(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    required
+                  >
+                    <option value="">Sélectionnez un pays</option>
+                    {countries.map(country => (
+                      <option key={country.id} value={country.id}>
+                        {country.name} ({country.code}) - {country.phone_prefix}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Numéro *
+                    {countryPrefix && (
+                      <span className="text-green-600 ml-1">
+                        (Indicatif: {countryPrefix})
+                      </span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    {countryPrefix && (
+                      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">
+                        {countryPrefix}
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      placeholder={countryPrefix ? "123456789" : "Sélectionnez d'abord un pays"}
+                      value={form.number}
+                      onChange={(e) => handleNumberChange(e.target.value)}
+                      className={`w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm ${
+                        countryPrefix ? 'pl-16' : 'pl-3'
+                      } ${!form.country_id ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                      required
+                      disabled={!form.country_id}
+                    />
+                  </div>
+                  {countryPrefix && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Le numéro commencera automatiquement par {countryPrefix}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Agent *
+                  </label>
                   <select
                     value={form.agent_id}
                     onChange={(e) => setForm({ ...form, agent_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     required
-                    disabled={!form.country_id || filterLoading}
                   >
-                    <option value="">
-                      {filterLoading 
-                        ? "Chargement des agents..." 
-                        : !form.country_id 
-                          ? "Sélectionnez d'abord un pays" 
-                          : currentCountryAgents.length === 0
-                            ? "Aucun agent disponible pour ce pays"
-                            : "Sélectionner un agent"
-                      }
-                    </option>
-                    {!filterLoading && currentCountryAgents.map(agent => (
+                    <option value="">Sélectionnez un agent</option>
+                    {agents.map(agent => (
                       <option key={agent.id} value={agent.id}>
                         {agent.name} ({agent.email})
                       </option>
                     ))}
                   </select>
-                  
-                  {filterLoading && (
-                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                      <Loader className="h-4 w-4 text-blue-600 animate-spin" />
-                    </div>
-                  )}
                 </div>
-                
-                {form.country_id && !filterLoading && (
-                  <p className={`text-xs mt-1 ${
-                    currentCountryAgents.length === 0 ? 'text-red-500' : 'text-gray-500'
-                  }`}>
-                    {currentCountryAgents.length === 0 
-                      ? "Aucun agent disponible pour ce pays" 
-                      : `${currentCountryAgents.length} agent(s) disponible(s) pour ce pays`
-                    }
-                  </p>
-                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Moyen de paiement *
+                  </label>
+                  <select
+                    value={form.payment_method_id}
+                    onChange={(e) => setForm({ ...form, payment_method_id: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    required
+                  >
+                    <option value="">Sélectionnez un moyen</option>
+                    {paymentMethods.map(method => (
+                      <option key={method.id} value={method.id}>
+                        {method.method}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="lg:col-span-2 flex items-end space-x-3">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Libellé (optionnel)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Compte principal, Carte perso..."
+                    value={form.label}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={form.is_active}
+                      onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">Numéro actif</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={filterLoading || (form.country_id && currentCountryAgents.length === 0)}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  {isEditing ? <Edit size={18} /> : <Plus size={18} />}
-                  <span>{isEditing ? "Modifier" : "Ajouter"}</span>
+                  {isEditing ? <Edit size={16} /> : <Plus size={16} />}
+                  {isEditing ? "Modifier" : "Ajouter"}
                 </button>
                 {isEditing && (
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     Annuler
                   </button>
@@ -529,90 +604,188 @@ export default function AuthorizedNumbersList() {
             </form>
           </div>
 
-          {/* Liste des numéros */}
-          <div className="p-6">
+          {/* Liste des numéros - Version mobile */}
+          <div className="lg:hidden">
             {filteredNumbers.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="mx-auto h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                  <Search className="h-8 w-8 text-gray-400" />
+              <div className="text-center py-8 px-4">
+                <div className="text-gray-400 mb-3">
+                  <Phone className="w-12 h-12 mx-auto" />
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {searchTerm ? "Aucun numéro trouvé" : "Aucun numéro autorisé"}
-                </h3>
-                <p className="text-gray-600 max-w-md mx-auto">
+                <p className="text-gray-500 text-base">Aucun numéro trouvé</p>
+                <p className="text-gray-400 text-sm mt-1">
                   {searchTerm 
-                    ? "Aucun résultat ne correspond à votre recherche." 
-                    : "Commencez par ajouter votre premier numéro autorisé en utilisant le formulaire ci-dessus."
+                    ? "Modifiez vos critères de recherche" 
+                    : "Commencez par ajouter un nouveau numéro"
                   }
                 </p>
               </div>
             ) : (
-              <div className="overflow-hidden border border-gray-200 rounded-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Numéro
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Pays
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Agent
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredNumbers.map((num) => (
-                      <tr key={num.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          #{num.id}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                          {num.number}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {num.country_name || `Pays #${num.country_id}`}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+              <div className="divide-y divide-gray-200">
+                {filteredNumbers.map((num) => (
+                  <div key={num.id} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <Phone className="w-4 h-4 text-blue-600" />
+                          </div>
                           <div>
-                            <div className="font-medium">{num.agent_name || `Agent #${num.agent_id}`}</div>
-                            {num.agent_email && (
-                              <div className="text-xs text-gray-500">{num.agent_email}</div>
+                            <h3 className="font-semibold text-gray-900 text-sm">
+                              {num.number}
+                            </h3>
+                            {num.label && (
+                              <p className="text-gray-500 text-xs">{num.label}</p>
                             )}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex items-center space-x-3">
-                            <button
-                              onClick={() => handleEdit(num)}
-                              className="text-blue-600 hover:text-blue-800 transition-colors flex items-center space-x-1"
-                            >
-                              <Edit size={16} />
-                              <span>Modifier</span>
-                            </button>
-                            <button
-                              onClick={() => handleDelete(num.id)}
-                              className="text-red-600 hover:text-red-800 transition-colors flex items-center space-x-1"
-                            >
-                              <Trash2 size={16} />
-                              <span>Supprimer</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                        <div className="space-y-1 text-xs text-gray-500">
+                          <p className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {num.agent_name || getAgentName(num.agent_id)}
+                          </p>
+                          <p className="flex items-center gap-1">
+                            <Globe className="w-3 h-3" />
+                            {num.country || getCountryName(num.country_id)}
+                          </p>
+                          <p className="flex items-center gap-1">
+                            <CreditCard className="w-3 h-3" />
+                            {num.payment_method || getPaymentMethodName(num.payment_method_id)}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          num.is_active
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {num.is_active ? "Actif" : "Inactif"}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleEdit(num)}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
+                      >
+                        <Edit size={14} />
+                        Modifier
+                      </button>
+                      <button
+                        onClick={() => handleDelete(num.id)}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm"
+                      >
+                        <Trash2 size={14} />
+                        Supprimer
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
+
+          {/* Tableau - Version desktop */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Numéro
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Libellé
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Agent
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Pays
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Moyen de Paiement
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredNumbers.map((num) => (
+                  <tr key={num.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div className="flex items-center">
+                        <Phone className="w-4 h-4 text-gray-400 mr-2" />
+                        {num.number}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {num.label || "-"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <User className="w-4 h-4 text-gray-400 mr-2" />
+                        {num.agent_name || getAgentName(num.agent_id)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <Globe className="w-4 h-4 text-gray-400 mr-2" />
+                        {num.country || getCountryName(num.country_id)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <CreditCard className="w-4 h-4 text-gray-400 mr-2" />
+                        {num.payment_method || getPaymentMethodName(num.payment_method_id)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          num.is_active
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {num.is_active ? "Actif" : "Inactif"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleEdit(num)}
+                          className="text-blue-600 hover:text-blue-900 transition-colors flex items-center gap-1"
+                        >
+                          <Edit size={16} />
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => handleDelete(num.id)}
+                          className="text-red-600 hover:text-red-900 transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={16} />
+                          Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pied de page */}
+          {filteredNumbers.length > 0 && (
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+              <p className="text-sm text-gray-600">
+                {filteredNumbers.length} numéro{filteredNumbers.length > 1 ? 's' : ''} autorisé{filteredNumbers.length > 1 ? 's' : ''} trouvé{filteredNumbers.length > 1 ? 's' : ''}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { 
+  Plus, Edit, Trash2, RefreshCw, Globe, Phone, Currency, 
+  TrendingUp, TrendingDown, Search, Filter, X 
+} from 'lucide-react';
 import api from '../../api/api';
 
 export default function CountriesList() {
@@ -12,317 +16,668 @@ export default function CountriesList() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   const fetchCountries = async () => {
+    console.log('🔄 fetchCountries - Début');
     setLoading(true);
     setError(null);
+    
     try {
+      console.log('📥 Chargement des pays et statistiques...');
       // D'abord, charger les pays et les stats
       const [countriesRes, statsRes] = await Promise.all([
         api.get('/country'),
         api.get('/country/stats')
       ]);
       
+      console.log('✅ Pays chargés:', countriesRes.data?.length || 0);
+      console.log('✅ Statistiques chargées:', statsRes.data);
+      
       setCountries(countriesRes.data || []);
       setStats(statsRes.data || { total: 0, active: 0, inactive: 0 });
       
       // Ensuite, charger les devises séparément pour éviter que l'échec d'une requête bloque tout
       try {
+        console.log('💰 Chargement des devises...');
         const currenciesRes = await api.get('/currency/active');
+        console.log('✅ Devises chargées:', currenciesRes.data?.length || 0);
         setCurrencies(currenciesRes.data || []);
       } catch (currencyError) {
-        console.warn('Erreur lors du chargement des devises:', currencyError);
+        console.warn('⚠️ Erreur lors du chargement des devises:', currencyError);
         setCurrencies([]);
       }
       
     } catch (err) {
-      console.error('Erreur lors du chargement des pays:', err);
+      console.error('💥 Erreur lors du chargement des pays:', err);
       setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
+      console.log('🔄 fetchCountries - Terminé');
     }
   };
 
   useEffect(() => { 
+    console.log('🎯 useEffect - Initialisation composant');
     fetchCountries(); 
   }, []);
 
+  // Filtrer les pays selon la recherche
+  const filteredCountries = countries.filter(country =>
+    country.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    country.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    country.phone_prefix?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    country.currency_code?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const saveCountry = async (e) => {
     e.preventDefault();
+    console.log('💾 saveCountry - Début');
+    console.log('📝 Données modal:', modal);
+    
     try {
+      // Préparer les données
+      const countryData = {
+        name: modal.country.name,
+        code: modal.country.code,
+        phone_prefix: modal.country.phone_prefix,
+        currency_id: parseInt(modal.country.currency_id),
+        is_active: modal.country.is_active
+      };
+
+      console.log('📤 Données à envoyer:', countryData);
+
       if (modal.mode === "add") {
-        await api.post('/country', modal.country);
+        console.log('➕ Mode: Création nouveau pays');
+        await api.post('/country', countryData);
+        console.log('✅ Pays créé avec succès');
       } else {
-        await api.put(`/country/${modal.country.id}`, modal.country);
+        console.log('✏️ Mode: Modification pays existant');
+        console.log(`📝 ID du pays: ${modal.country.id}`);
+        await api.put(`/country/${modal.country.id}`, countryData);
+        console.log('✅ Pays modifié avec succès');
       }
+      
       setModal(null);
+      console.log('📭 Modal fermé');
       fetchCountries();
+      
     } catch (err) {
-      console.error(err);
-      alert('Erreur lors de la sauvegarde du pays');
+      console.error('💥 Erreur saveCountry:', err);
+      console.error('💥 Détails erreur:', {
+        status: err.response?.status,
+        message: err.response?.data?.message,
+        data: err.response?.data
+      });
+      
+      // Afficher un message d'erreur plus précis
+      if (err.response?.data?.message) {
+        alert(`Erreur: ${err.response.data.message}`);
+      } else {
+        alert('Erreur lors de la sauvegarde du pays');
+      }
     }
   };
 
   const deleteCountry = async (id) => {
-    if (!window.confirm("Supprimer ce pays ?")) return;
+    console.log('🗑️ deleteCountry - Début');
+    console.log(`📝 ID à supprimer: ${id}`);
+    
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce pays ?")) {
+      console.log('❌ Suppression annulée par l\'utilisateur');
+      return;
+    }
+    
     try {
+      console.log('📤 Envoi requête suppression...');
       await api.delete(`/country/${id}`);
+      console.log('✅ Pays supprimé avec succès');
       fetchCountries();
     } catch (err) {
-      console.error(err);
+      console.error('💥 Erreur deleteCountry:', err);
+      console.error('💥 Détails erreur:', {
+        status: err.response?.status,
+        message: err.response?.data?.message,
+        data: err.response?.data
+      });
       alert('Erreur lors de la suppression du pays');
     }
   };
 
   const toggleActiveStatus = async (country) => {
+    console.log('🔄 toggleActiveStatus - Début');
+    console.log('📝 Pays:', {
+      id: country.id,
+      name: country.name,
+      code: country.code,
+      current_status: country.is_active,
+      new_status: !country.is_active
+    });
+    
     try {
-      await api.put(`/country/${country.id}`, {
-        ...country,
+      console.log('📤 Envoi requête toggle status...');
+      await api.patch(`/country/${country.id}/toggle-status`, {
         is_active: !country.is_active
       });
+      
+      console.log('✅ Statut modifié avec succès');
       fetchCountries();
+      
     } catch (err) {
-      console.error(err);
+      console.error('💥 Erreur toggleActiveStatus:', err);
+      console.error('💥 Détails erreur:', {
+        status: err.response?.status,
+        message: err.response?.data?.message,
+        data: err.response?.data
+      });
       alert('Erreur lors de la modification du statut');
     }
   };
 
   // Fonction pour réessayer le chargement
   const retryLoad = () => {
+    console.log('🔄 Retry load - Rechargement des données');
     fetchCountries();
   };
 
+  if (loading) {
+    console.log('⏳ Affichage état loading');
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-3 text-gray-600">Chargement des pays...</p>
+        </div>
+      </div>
+    );
+  }
+
+  console.log('🎨 Rendu composant - Données:', {
+    countries: countries.length,
+    filtered: filteredCountries.length,
+    stats,
+    modal: modal ? `${modal.mode} mode` : 'null',
+    searchTerm,
+    error
+  });
+
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold">Gestion des pays</h1>
-        <button
-          onClick={() => setModal({ 
-            mode: "add", 
-            country: { 
-              name: "", 
-              code: "", 
-              phone_prefix: "", 
-              currency_id: null,
-              is_active: true 
-            } 
-          })}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
-        >
-          + Ajouter un pays
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* En-tête */}
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-gray-900 mb-1">Gestion des Pays</h1>
+          <p className="text-gray-600 text-sm">Administrez les pays et leurs configurations</p>
+        </div>
 
-      {/* Afficher l'erreur si elle existe */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          <p>{error}</p>
-          <button 
-            onClick={retryLoad}
-            className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-          >
-            Réessayer
-          </button>
-        </div>
-      )}
+        {/* Afficher l'erreur si elle existe */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+            <p>{error}</p>
+            <button 
+              onClick={retryLoad}
+              className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
 
-      {/* Cartes de statistiques */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-xl shadow">
-          <h3 className="text-gray-500 text-sm font-medium">Total des pays</h3>
-          <p className="text-2xl font-bold">{stats.total}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow">
-          <h3 className="text-gray-500 text-sm font-medium">Pays actifs</h3>
-          <p className="text-2xl font-bold text-green-600">{stats.active}</p>
-        </div>
-        <div className="bg-white p-4 rounded-xl shadow">
-          <h3 className="text-gray-500 text-sm font-medium">Pays inactifs</h3>
-          <p className="text-2xl font-bold text-red-600">{stats.inactive}</p>
-        </div>
-      </div>
+        {/* Carte principale */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          {/* En-tête de carte avec actions */}
+          <div className="px-4 py-3 border-b border-gray-200">
+            <div className="flex flex-col space-y-3">
+              {/* Barre de recherche */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un pays, code, indicatif ou devise..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    console.log('🔍 Recherche:', e.target.value);
+                    setSearchTerm(e.target.value);
+                  }}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
 
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="text-gray-500">Chargement...</div>
-        </div>
-      ) : error ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="text-red-500">Impossible de charger les pays</div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl shadow overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="py-3 px-4 text-left">Nom</th>
-                <th className="py-3 px-4 text-left">Code</th>
-                <th className="py-3 px-4 text-left">Préfixe téléphonique</th>
-                <th className="py-3 px-4 text-left">Devise</th>
-                <th className="py-3 px-4 text-left">Statut</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {countries.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="py-8 text-center text-gray-500">
-                    Aucun pays trouvé
-                  </td>
-                </tr>
-              ) : (
-                countries.map((country) => (
-                  <tr key={country.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4">{country.name}</td>
-                    <td className="py-3 px-4">{country.code}</td>
-                    <td className="py-3 px-4">{country.phone_prefix}</td>
-                    <td className="py-3 px-4">{country.currency_code}</td>
-                    <td className="py-3 px-4">
-                      <span 
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          country.is_active 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+              {/* Actions */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    console.log('🎛️ Toggle filters:', !showFilters);
+                    setShowFilters(!showFilters);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <Filter className="h-4 w-4" />
+                  Filtres
+                  {showFilters && <X className="h-4 w-4" />}
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      console.log('🔄 Actualisation manuelle');
+                      fetchCountries();
+                    }}
+                    className="p-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    title="Actualiser"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      console.log('➕ Ouverture modal nouveau pays');
+                      setModal({ 
+                        mode: "add", 
+                        country: { 
+                          name: "", 
+                          code: "", 
+                          phone_prefix: "", 
+                          currency_id: null,
+                          is_active: true 
+                        } 
+                      });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus size={16} />
+                    <span className="hidden sm:inline">Nouveau Pays</span>
+                    <span className="sm:hidden">Nouveau</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cartes de statistiques */}
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-medium">Total</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                  </div>
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Globe className="w-5 h-5 text-blue-600" />
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-medium">Actifs</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+                  </div>
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <TrendingUp className="w-5 h-5 text-green-600" />
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm font-medium">Inactifs</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.inactive}</p>
+                  </div>
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <TrendingDown className="w-5 h-5 text-red-600" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Liste des pays - Version mobile */}
+          <div className="lg:hidden">
+            {filteredCountries.length === 0 ? (
+              <div className="text-center py-8 px-4">
+                <div className="text-gray-400 mb-3">
+                  <Globe className="w-12 h-12 mx-auto" />
+                </div>
+                <p className="text-gray-500 text-base">Aucun pays trouvé</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  {searchTerm 
+                    ? "Modifiez vos critères de recherche" 
+                    : "Commencez par ajouter un nouveau pays"
+                  }
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {filteredCountries.map((country) => (
+                  <div key={country.id} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <Globe className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900 text-sm">
+                              {country.name}
+                            </h3>
+                            <p className="text-gray-500 text-xs">
+                              {country.code} • {country.phone_prefix}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Currency className="w-3 h-3" />
+                          {country.currency_code || 'Aucune devise'}
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          country.is_active
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
                         }`}
                       >
-                        {country.is_active ? 'Actif' : 'Inactif'}
+                        {country.is_active ? "Actif" : "Inactif"}
                       </span>
-                    </td>
-                    <td className="py-3 px-4 text-right space-x-2">
+                    </div>
+                    <div className="flex gap-2 mt-3">
                       <button
-                        onClick={() => setModal({ mode: "edit", country })}
-                        className="text-indigo-600 hover:text-indigo-800"
+                        onClick={() => {
+                          console.log('✏️ Ouverture modal modification pays:', country);
+                          setModal({ mode: "edit", country });
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
                       >
+                        <Edit size={14} />
                         Modifier
                       </button>
-                      <button 
-                        onClick={() => toggleActiveStatus(country)}
-                        className={`${
-                          country.is_active 
-                            ? 'text-orange-600 hover:text-orange-800' 
-                            : 'text-green-600 hover:text-green-800'
+                      <button
+                        onClick={() => {
+                          console.log('🔄 Toggle status pays:', country.id);
+                          toggleActiveStatus(country);
+                        }}
+                        className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 border rounded-lg transition-colors text-sm ${
+                          country.is_active
+                            ? "text-orange-600 border-orange-600 hover:bg-orange-50"
+                            : "text-green-600 border-green-600 hover:bg-green-50"
                         }`}
                       >
-                        {country.is_active ? 'Désactiver' : 'Activer'}
+                        {country.is_active ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+                        {country.is_active ? "Désactiver" : "Activer"}
                       </button>
-                      <button 
-                        onClick={() => deleteCountry(country.id)} 
-                        className="text-red-600 hover:text-red-800"
+                      <button
+                        onClick={() => {
+                          console.log('🗑️ Suppression pays:', country.id);
+                          deleteCountry(country.id);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm"
                       >
+                        <Trash2 size={14} />
                         Supprimer
                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Tableau - Version desktop */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Nom
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Code
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Indicatif
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Devise
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Statut
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredCountries.map((country) => (
+                  <tr key={country.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div className="flex items-center">
+                        <Globe className="w-4 h-4 text-gray-400 mr-2" />
+                        {country.name}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {country.code}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <Phone className="w-4 h-4 text-gray-400 mr-2" />
+                        {country.phone_prefix}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center">
+                        <Currency className="w-4 h-4 text-gray-400 mr-2" />
+                        {country.currency_code || 'Aucune'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          country.is_active
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {country.is_active ? "Actif" : "Inactif"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            console.log('✏️ Ouverture modal modification pays:', country);
+                            setModal({ mode: "edit", country });
+                          }}
+                          className="text-blue-600 hover:text-blue-900 transition-colors flex items-center gap-1"
+                        >
+                          <Edit size={16} />
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => {
+                            console.log('🔄 Toggle status pays:', country.id);
+                            toggleActiveStatus(country);
+                          }}
+                          className={`hover:text-opacity-80 transition-colors flex items-center gap-1 ${
+                            country.is_active
+                              ? "text-orange-600 hover:text-orange-900"
+                              : "text-green-600 hover:text-green-900"
+                          }`}
+                        >
+                          {country.is_active ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
+                          {country.is_active ? "Désactiver" : "Activer"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            console.log('🗑️ Suppression pays:', country.id);
+                            deleteCountry(country.id);
+                          }}
+                          className="text-red-600 hover:text-red-900 transition-colors flex items-center gap-1"
+                        >
+                          <Trash2 size={16} />
+                          Supprimer
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pied de page */}
+          {filteredCountries.length > 0 && (
+            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+              <p className="text-sm text-gray-600">
+                {filteredCountries.length} pays{filteredCountries.length > 1 ? '' : ''} trouvé{filteredCountries.length > 1 ? 's' : ''}
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Modal */}
       {modal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50">
           <form
             onSubmit={saveCountry}
-            className="bg-white p-6 rounded-xl shadow w-full max-w-md space-y-4"
+            className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto"
           >
-            <h2 className="text-xl font-semibold">
-              {modal.mode === "add" ? "Nouveau pays" : "Modifier pays"}
-            </h2>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nom
-              </label>
-              <input
-                value={modal.country.name}
-                onChange={(e) => setModal({ ...modal, country: { ...modal.country, name: e.target.value } })}
-                placeholder="Nom du pays"
-                className="w-full border px-3 py-2 rounded"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Code
-              </label>
-              <input
-                value={modal.country.code}
-                onChange={(e) => setModal({ ...modal, country: { ...modal.country, code: e.target.value } })}
-                placeholder="Code (ex: CI)"
-                className="w-full border px-3 py-2 rounded"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Préfixe téléphonique
-              </label>
-              <input
-                value={modal.country.phone_prefix}
-                onChange={(e) => setModal({ ...modal, country: { ...modal.country, phone_prefix: e.target.value } })}
-                placeholder="+225"
-                className="w-full border px-3 py-2 rounded"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Devise
-              </label>
-              <select
-                value={modal.country.currency_id || ''}
-                onChange={(e) => setModal({ 
-                  ...modal, 
-                  country: { 
-                    ...modal.country, 
-                    currency_id: e.target.value ? parseInt(e.target.value) : null 
-                  } 
-                })}
-                className="w-full border px-3 py-2 rounded"
-                required
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Globe className="w-5 h-5" />
+                {modal.mode === "add" ? "Nouveau Pays" : "Modifier le Pays"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  console.log('❌ Fermeture modal');
+                  setModal(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
               >
-                <option value="">Sélectionnez une devise</option>
-                {currencies.map((currency) => (
-                  <option key={currency.id} value={currency.id}>
-                    {currency.code} - {currency.name} ({currency.symbol})
-                  </option>
-                ))}
-              </select>
+                <X size={20} />
+              </button>
             </div>
             
-            {modal.mode === "edit" && (
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={modal.country.is_active}
-                  onChange={(e) => setModal({ ...modal, country: { ...modal.country, is_active: e.target.checked } })}
-                  className="mr-2"
-                />
-                <label htmlFor="is_active" className="text-sm text-gray-700">
-                  Pays actif
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nom du pays *
                 </label>
+                <input
+                  value={modal.country.name}
+                  onChange={(e) => {
+                    console.log('📝 Changement nom:', e.target.value);
+                    setModal({ ...modal, country: { ...modal.country, name: e.target.value } });
+                  }}
+                  placeholder="Ex: France, Côte d'Ivoire"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
               </div>
-            )}
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Code ISO *
+                </label>
+                <input
+                  value={modal.country.code}
+                  onChange={(e) => {
+                    const newCode = e.target.value.toUpperCase();
+                    console.log('📝 Changement code:', newCode);
+                    setModal({ ...modal, country: { ...modal.country, code: newCode } });
+                  }}
+                  placeholder="Ex: FR, CI, US"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
+                  required
+                  maxLength={3}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Indicatif téléphonique *
+                </label>
+                <input
+                  value={modal.country.phone_prefix}
+                  onChange={(e) => {
+                    console.log('📝 Changement indicatif:', e.target.value);
+                    setModal({ ...modal, country: { ...modal.country, phone_prefix: e.target.value } });
+                  }}
+                  placeholder="Ex: +33, +225, +1"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Devise *
+                </label>
+                <select
+                  value={modal.country.currency_id || ''}
+                  onChange={(e) => {
+                    const currencyId = e.target.value ? parseInt(e.target.value) : null;
+                    console.log('📝 Changement devise:', currencyId);
+                    setModal({ 
+                      ...modal, 
+                      country: { 
+                        ...modal.country, 
+                        currency_id: currencyId
+                      } 
+                    });
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="">Sélectionnez une devise</option>
+                  {currencies.map((currency) => (
+                    <option key={currency.id} value={currency.id}>
+                      {currency.code} - {currency.name} ({currency.symbol})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              {modal.mode === "edit" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={modal.country.is_active}
+                    onChange={(e) => {
+                      console.log('📝 Changement statut:', e.target.checked);
+                      setModal({ ...modal, country: { ...modal.country, is_active: e.target.checked } });
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                  />
+                  <label htmlFor="is_active" className="text-sm text-gray-700">
+                    Pays actif
+                  </label>
+                </div>
+              )}
+            </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3 pt-6">
               <button 
                 type="button" 
-                onClick={() => setModal(null)} 
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  console.log('❌ Annulation modal');
+                  setModal(null);
+                }} 
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
               >
                 Annuler
               </button>
               <button 
                 type="submit" 
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Enregistrer
+                {modal.mode === "add" ? "Créer" : "Modifier"}
               </button>
             </div>
           </form>
