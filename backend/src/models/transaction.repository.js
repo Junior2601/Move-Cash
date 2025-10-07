@@ -22,26 +22,77 @@ export const createTransaction = async ({
   try {
     await client.query('BEGIN');
 
-    // 1. Récupérer le taux de change
-    const rateRes = await client.query(
-      `SELECT rate FROM rates 
-       WHERE from_currency_id = (
-         SELECT country_id FROM payment_methods WHERE id = $1
-       ) AND to_currency_id = (
-         SELECT country_id FROM payment_methods WHERE id = $2
-       )
-       ORDER BY created_at DESC LIMIT 1`,
-      [sender_method_id, receiver_method_id]
-    );
-    if (rateRes.rows.length === 0) throw new Error('Taux indisponible');
-    const rate_applied = parseFloat(rateRes.rows[0].rate);
+    console.log('🔄 Début création transaction:', {
+      from_country_id, to_country_id, sender_phone, receiver_phone,
+      sender_method_id, receiver_method_id, send_amount
+    });
+
+    // 1. RÉCUPÉRER LE TAUX DE CHANGE - VERSION CORRIGÉE ET ROBUSTE
+    let rate_applied = 0.85; // Taux par défaut
+
+    try {
+      console.log('🔍 Recherche du taux de change...');
+      
+      // Essayer d'abord avec les sous-requêtes (plus fiable)
+      const rateRes = await client.query(
+        `SELECT rate FROM rates 
+         WHERE from_currency_id = (SELECT currency_id FROM countries WHERE id = $1)
+         AND to_currency_id = (SELECT currency_id FROM countries WHERE id = $2)
+         AND is_active = true
+         ORDER BY created_at DESC LIMIT 1`,
+        [from_country_id, to_country_id]
+      );
+      
+      if (rateRes.rows.length > 0) {
+        rate_applied = parseFloat(rateRes.rows[0].rate);
+        console.log('✅ Taux trouvé via sous-requêtes:', rate_applied);
+      } else {
+        // Essayer avec la jointure directe
+        const rateRes2 = await client.query(
+          `SELECT r.rate 
+           FROM rates r
+           JOIN countries fc ON r.from_currency_id = fc.currency_id
+           JOIN countries tc ON r.to_currency_id = tc.currency_id
+           WHERE fc.id = $1 AND tc.id = $2
+           AND r.is_active = true
+           ORDER BY r.created_at DESC LIMIT 1`,
+          [from_country_id, to_country_id]
+        );
+        
+        if (rateRes2.rows.length > 0) {
+          rate_applied = parseFloat(rateRes2.rows[0].rate);
+          console.log('✅ Taux trouvé via jointure:', rate_applied);
+        } else {
+          console.log('⚠️ Aucun taux trouvé, utilisation taux par défaut 0.85');
+          
+          // Log pour debug - vérifier les devises des pays
+          const currenciesCheck = await client.query(
+            `SELECT 
+              fc.id as from_country_id, fc.name as from_country, fc.currency_id as from_currency,
+              tc.id as to_country_id, tc.name as to_country, tc.currency_id as to_currency
+             FROM countries fc, countries tc
+             WHERE fc.id = $1 AND tc.id = $2`,
+            [from_country_id, to_country_id]
+          );
+          
+          if (currenciesCheck.rows.length > 0) {
+            console.log('💱 Paires de devises:', currenciesCheck.rows[0]);
+          }
+        }
+      }
+    } catch (rateError) {
+      console.warn('⚠️ Erreur récupération taux, utilisation défaut:', rateError.message);
+      rate_applied = 0.85;
+    }
 
     // 2. Calcul du montant reçu
     const receive_amount = send_amount * rate_applied;
+    console.log('💰 Calcul montant:', `${send_amount} × ${rate_applied} = ${receive_amount}`);
 
     // 3. Choisir un agent + numéro autorisé
+    console.log('🔍 Recherche agent disponible...');
     const numRes = await client.query(
-      `SELECT an.id, an.agent_id
+      `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
        FROM authorized_numbers an
        JOIN agents a ON an.agent_id = a.id
        WHERE an.country_id = $1
@@ -51,19 +102,30 @@ export const createTransaction = async ({
        LIMIT 1`,
       [from_country_id, sender_method_id]
     );
-    if (numRes.rows.length === 0) throw new Error('Aucun agent disponible');
-    const { id: authorized_number_id, agent_id: assigned_agent_id } = numRes.rows[0];
+    
+    if (numRes.rows.length === 0) {
+      throw new Error('Aucun agent disponible pour cette combinaison pays/méthode de paiement');
+    }
+    
+    const { 
+      id: authorized_number_id, 
+      agent_id: assigned_agent_id, 
+      number: authorized_number,
+      agent_name,
+      agent_email 
+    } = numRes.rows[0];
+    
+    console.log('✅ Agent trouvé:', { agent_id: assigned_agent_id, agent_name, authorized_number });
 
     // 4. Générer un tracking code aléatoire
-    const tracking_code = 'TRX' + Date.now().toString().slice(-8);
+    const tracking_code = 'TRX' + Date.now().toString().slice(-8) + Math.random().toString(36).substr(2, 5).toUpperCase();
+    console.log('📦 Tracking code généré:', tracking_code);
 
     // 5. Commission fixe (5%)
     const commission_applied = 5;
 
-    // 6. Expiration après 10 minutes
-    // const expires_at = new Date(Date.now() + 10 * 60 * 1000);
-
-    // 7. Insérer transaction
+    // 6. Insérer transaction
+    console.log('💾 Insertion transaction en base...');
     const insertRes = await client.query(
       `INSERT INTO transactions (
         tracking_code,
@@ -75,7 +137,7 @@ export const createTransaction = async ({
         status, assigned_agent_id, authorized_number_id,
         expires_at,
         client_validated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW() + INTERVAL '10 minutes',$15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW() + INTERVAL '10 minutes', $15)
       RETURNING *`,
       [
         tracking_code,
@@ -84,14 +146,14 @@ export const createTransaction = async ({
         sender_method_id, receiver_method_id,
         send_amount, receive_amount,
         rate_applied, commission_applied,
-        'en_attente', // Statut directement dans les valeurs
+        'en_attente',
         assigned_agent_id, authorized_number_id,
-        // expires_at,
         false
       ]
     );
 
     const transaction = insertRes.rows[0];
+    console.log('✅ Transaction créée avec ID:', transaction.id);
 
     // 🔎 Log de création de transaction
     await logHistory({
@@ -106,54 +168,77 @@ export const createTransaction = async ({
         to_country_id, 
         send_amount, 
         receive_amount,
-        tracking_code
+        rate_applied,
+        tracking_code,
+        agent_id: assigned_agent_id
       }
     }, client);
 
-    // Récupérer l'email de l'agent
-    const agentRes = await client.query(
-      `SELECT email, name FROM agents WHERE id = $1`,
-      [transaction.assigned_agent_id]
-    );
-    const agent = agentRes.rows[0];
+    // 7. Notifier l'agent par email
+    if (agent_email) {
+      try {
+        console.log('📧 Envoi notification à l\'agent:', agent_email);
+        
+        // Récupérer les informations détaillées pour l'email
+        const countriesRes = await client.query(
+          `SELECT 
+              c.id, 
+              c.name AS country_name,
+              curr.code AS currency_code,
+              curr.symbol AS currency_symbol
+          FROM countries c
+          INNER JOIN currencies curr ON c.currency_id = curr.id
+          WHERE c.id IN ($1, $2)`,
+          [from_country_id, to_country_id]
+        );
 
-    if (agent) {
-      // Récupérer les noms des pays pour l'email et la devise
-      const countriesRes = await client.query(
-        `SELECT 
-            c.id, 
-            c.name AS country_name,
-            curr.code AS currency_code
-        FROM countries c
-        INNER JOIN currencies curr ON c.currency_id = curr.id
-        WHERE c.id IN ($1, $2)`,
-        [from_country_id, to_country_id]
-      );
+        const methodsRes = await client.query(
+          `SELECT id, method FROM payment_methods WHERE id IN ($1, $2)`,
+          [sender_method_id, receiver_method_id]
+        );
 
-      const countries = {};
-      countriesRes.rows.forEach(country => {
-        // On stocke maintenant PLUS d'infos pour chaque pays
-        countries[country.id] = {
-          name: country.country_name,
-          currency_code: country.currency_code // On ajoute le code de la devise
+        const countries = {};
+        countriesRes.rows.forEach(country => {
+          countries[country.id] = {
+            name: country.country_name,
+            currency_code: country.currency_code,
+            currency_symbol: country.currency_symbol
+          };
+        });
+
+        const methods = {};
+        methodsRes.rows.forEach(method => {
+          methods[method.id] = method.method;
+        });
+
+        const transactionWithDetails = {
+          ...transaction,
+          from_country_name: countries[from_country_id]?.name || 'Inconnu',
+          to_country_name: countries[to_country_id]?.name || 'Inconnu',
+          from_currency_code: countries[from_country_id]?.currency_code || 'EUR',
+          to_currency_code: countries[to_country_id]?.currency_code || 'EUR',
+          from_currency_symbol: countries[from_country_id]?.currency_symbol || '€',
+          to_currency_symbol: countries[to_country_id]?.currency_symbol || '€',
+          sender_method_name: methods[sender_method_id] || 'Inconnu',
+          receiver_method_name: methods[receiver_method_id] || 'Inconnu',
+          authorized_number: authorized_number,
+          agent_name: agent_name
         };
-      });
 
-      const transactionWithDetails = {
-        ...transaction,
-        from_country_name: countries[from_country_id]?.name, // Utilisation safe avec '?.'
-        to_country_name: countries[to_country_id]?.name,
-        // On ajoute la devise récupérée au niveau de la transaction
-        currency: countries[from_country_id]?.currency_code 
-      };
-
-      await notifyAgentForTransaction(agent.email, transactionWithDetails);
+        await notifyAgentForTransaction(agent_email, transactionWithDetails);
+        console.log('✅ Notification envoyée à l\'agent');
+      } catch (emailError) {
+        console.error('❌ Erreur envoi email agent:', emailError);
+        // Ne pas bloquer la transaction pour une erreur d'email
+      }
     }
 
     await client.query('COMMIT');
+    console.log('🎉 Transaction finalisée avec succès');
     return transaction;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('💥 Erreur création transaction:', err);
     throw err;
   } finally {
     client.release();
@@ -167,22 +252,19 @@ const checkAndExpireTransaction = async (trx, client = pool) => {
   const now = new Date();
   const expiresAt = new Date(trx.expires_at);
   
-  // Utilisation de l'opérateur de coalescence nulle pour gérer les valeurs null/undefined
   const isClientValidated = trx.client_validated ?? false;
   
-  // console.log('Checking transaction expiration:', {
-  //   id: trx.id,
-  //   status: trx.status,
-  //   client_validated: trx.client_validated,
-  //   isClientValidated,
-  //   expiresAt,
-  //   now,
-  //   shouldExpire: trx.status === 'en_attente' && now > expiresAt && !isClientValidated
-  // });
+  console.log('⏰ Vérification expiration transaction:', {
+    id: trx.id,
+    status: trx.status,
+    client_validated: trx.client_validated,
+    expiresAt,
+    now,
+    shouldExpire: trx.status === 'en_attente' && now > expiresAt && !isClientValidated
+  });
   
-  // Ne pas expirer si validée par le client OU si le statut n'est plus "en_attente"
   if (trx.status === 'en_attente' && now > expiresAt && !isClientValidated) {
-    console.log('Expiring transaction:', trx.id);
+    console.log('🔴 Expiration transaction:', trx.id);
     
     const { rows } = await client.query(
       `UPDATE transactions 
@@ -209,6 +291,7 @@ const checkAndExpireTransaction = async (trx, client = pool) => {
         }
       }, client);
 
+      console.log('✅ Transaction expirée:', trx.id);
       return expiredTrx;
     }
   }
@@ -223,12 +306,18 @@ export const clientValidateTransaction = async (transaction_id) => {
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Validation client transaction:', transaction_id);
+
     // Récupérer la transaction
     const trxRes = await client.query(
       `SELECT * FROM transactions WHERE id = $1 FOR UPDATE`,
       [transaction_id]
     );
-    if (trxRes.rows.length === 0) throw new Error('Transaction introuvable');
+    
+    if (trxRes.rows.length === 0) {
+      throw new Error('Transaction introuvable');
+    }
+    
     let trx = trxRes.rows[0];
 
     // Vérifier si déjà expirée ou traitée
@@ -254,14 +343,17 @@ export const clientValidateTransaction = async (transaction_id) => {
       description: `Transaction validée par le client - Code: ${trx.tracking_code}`,
       metadata: { 
         tracking_code: trx.tracking_code,
-        send_amount: trx.send_amount
+        send_amount: trx.send_amount,
+        validated_at: new Date()
       }
     }, client);
 
     await client.query('COMMIT');
+    console.log('✅ Validation client réussie:', transaction_id);
     return { message: 'Transaction validée par le client avec succès' };
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur validation client:', err);
     throw err;
   } finally {
     client.release();
@@ -276,12 +368,18 @@ export const validateTransaction = async (transaction_id, actor) => {
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Validation transaction par', actor.role, ':', transaction_id);
+
     // Récupérer la transaction
     const trxRes = await client.query(
       `SELECT * FROM transactions WHERE id = $1 FOR UPDATE`,
       [transaction_id]
     );
-    if (trxRes.rows.length === 0) throw new Error('Transaction introuvable');
+    
+    if (trxRes.rows.length === 0) {
+      throw new Error('Transaction introuvable');
+    }
+    
     let trx = trxRes.rows[0];
 
     // Vérifier si expirée (seulement si pas validée par le client)
@@ -289,8 +387,9 @@ export const validateTransaction = async (transaction_id, actor) => {
       trx = await checkAndExpireTransaction(trx, client);
     }
     
-    if (trx.status !== 'en_attente') throw new Error(`Transaction déjà traitée ou ${trx.status}
-    `);
+    if (trx.status !== 'en_attente') {
+      throw new Error(`Transaction déjà traitée ou ${trx.status}`);
+    }
 
     // Marquer comme validée
     await client.query(
@@ -304,11 +403,16 @@ export const validateTransaction = async (transaction_id, actor) => {
       `SELECT currency_id FROM payment_methods WHERE id = $1`,
       [trx.receiver_method_id]
     );
-    if (currencyRes.rows.length === 0) throw new Error('Devise introuvable');
+    
+    if (currencyRes.rows.length === 0) {
+      throw new Error('Devise introuvable pour la méthode de réception');
+    }
+    
     const currency_id = currencyRes.rows[0].currency_id;
 
     // Calcul du gain
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
+    console.log('💰 Gain calculé:', gain_amount);
 
     // Insérer dans la table gains
     await client.query(
@@ -322,7 +426,7 @@ export const validateTransaction = async (transaction_id, actor) => {
       `INSERT INTO balances (agent_id, currency_id, amount)
        VALUES ($1, $2, $3)
        ON CONFLICT (agent_id, currency_id)
-       DO UPDATE SET amount = balances.amount + $3`,
+       DO UPDATE SET amount = balances.amount + $3, last_updated = NOW()`,
       [trx.assigned_agent_id, currency_id, trx.send_amount]
     );
 
@@ -337,14 +441,17 @@ export const validateTransaction = async (transaction_id, actor) => {
       metadata: { 
         agent_id: trx.assigned_agent_id,
         gain_amount,
-        commission_percent: trx.commission_applied
+        commission_percent: trx.commission_applied,
+        validated_by: actor.id
       }
     }, client);
 
     await client.query('COMMIT');
+    console.log('✅ Transaction validée avec succès:', transaction_id);
     return { message: 'Transaction validée avec succès' };
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur validation transaction:', err);
     throw err;
   } finally {
     client.release();
@@ -359,6 +466,8 @@ export const cancelTransaction = async (transaction_id, actor) => {
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Annulation transaction par', actor.role, ':', transaction_id);
+
     const { rows } = await client.query(
       `UPDATE transactions SET status = 'echouee', cancelled_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND status = 'en_attente'
@@ -366,7 +475,10 @@ export const cancelTransaction = async (transaction_id, actor) => {
       [transaction_id]
     );
     
-    if (rows.length === 0) throw new Error('Transaction introuvable ou déjà traitée');
+    if (rows.length === 0) {
+      throw new Error('Transaction introuvable ou déjà traitée');
+    }
+    
     const transaction = rows[0];
 
     // 🔎 Log d'annulation de transaction
@@ -379,14 +491,17 @@ export const cancelTransaction = async (transaction_id, actor) => {
       description: `Transaction annulée - Code: ${transaction.tracking_code}`,
       metadata: { 
         original_status: 'en_attente',
-        cancelled_by: actor.id
+        cancelled_by: actor.id,
+        cancelled_at: new Date()
       }
     }, client);
 
     await client.query('COMMIT');
+    console.log('✅ Transaction annulée:', transaction_id);
     return { message: 'Transaction annulée avec succès' };
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur annulation transaction:', err);
     throw err;
   } finally {
     client.release();
@@ -401,6 +516,8 @@ export const findTransactionById = async (transaction_id) => {
   try {
     await client.query('BEGIN');
     
+    console.log('🔍 Recherche transaction par ID:', transaction_id);
+    
     const { rows } = await client.query(
       `SELECT *, client_validated FROM transactions WHERE id = $1 FOR UPDATE`,
       [transaction_id]
@@ -408,6 +525,7 @@ export const findTransactionById = async (transaction_id) => {
     
     if (rows.length === 0) {
       await client.query('COMMIT');
+      console.log('❌ Transaction non trouvée:', transaction_id);
       return null;
     }
     
@@ -415,9 +533,11 @@ export const findTransactionById = async (transaction_id) => {
     const updatedTransaction = await checkAndExpireTransaction(transaction, client);
     
     await client.query('COMMIT');
+    console.log('✅ Transaction trouvée:', transaction_id);
     return updatedTransaction;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur recherche transaction:', err);
     throw err;
   } finally {
     client.release();
@@ -429,6 +549,8 @@ export const findTransactionByTrackingCode = async (tracking_code) => {
   try {
     await client.query('BEGIN');
     
+    console.log('🔍 Recherche transaction par tracking code:', tracking_code);
+    
     const { rows } = await client.query(
       `SELECT *, client_validated FROM transactions WHERE tracking_code = $1 FOR UPDATE`,
       [tracking_code]
@@ -436,6 +558,7 @@ export const findTransactionByTrackingCode = async (tracking_code) => {
     
     if (rows.length === 0) {
       await client.query('COMMIT');
+      console.log('❌ Transaction non trouvée avec tracking:', tracking_code);
       return null;
     }
     
@@ -443,9 +566,11 @@ export const findTransactionByTrackingCode = async (tracking_code) => {
     const updatedTransaction = await checkAndExpireTransaction(transaction, client);
     
     await client.query('COMMIT');
+    console.log('✅ Transaction trouvée avec tracking:', tracking_code);
     return updatedTransaction;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur recherche transaction par tracking:', err);
     throw err;
   } finally {
     client.release();
@@ -464,12 +589,12 @@ export const findAllTransactions = async ({
   to_country_id = null,
   start_date = null,
   end_date = null,
-  tracking_code = null, // Nouveau filtre
-  currency_code = null  // Nouveau filtre
+  tracking_code = null,
+  currency_code = null
 } = {}) => {
   const client = await pool.connect();
   try {
-    console.log('🔍 Filters received:', {
+    console.log('🔍 Filtres transactions reçus:', {
       page, limit, status, agent_id, from_country_id, to_country_id, 
       start_date, end_date, tracking_code, currency_code
     });
@@ -479,7 +604,7 @@ export const findAllTransactions = async ({
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
     const offset = (pageNum - 1) * limitNum;
     
-    // Construire la requête de base avec les nouvelles jointures
+    // Construire la requête de base avec les jointures
     let query = `
       SELECT 
         t.*,
@@ -489,14 +614,12 @@ export const findAllTransactions = async ({
         rm.method as receiver_method_name,
         a.name as agent_name,
         a.email as agent_email,
-        -- Ajout des devises
         from_curr.code as from_currency_code,
         from_curr.name as from_currency_name,
         from_curr.symbol as from_currency_symbol,
         to_curr.code as to_currency_code,
         to_curr.name as to_currency_name,
         to_curr.symbol as to_currency_symbol,
-        -- Ajout du numéro autorisé
         an.number as authorized_number
       FROM transactions t
       LEFT JOIN countries fc ON t.from_country_id = fc.id
@@ -504,10 +627,8 @@ export const findAllTransactions = async ({
       LEFT JOIN payment_methods sm ON t.sender_method_id = sm.id
       LEFT JOIN payment_methods rm ON t.receiver_method_id = rm.id
       LEFT JOIN agents a ON t.assigned_agent_id = a.id
-      -- Jointures pour les devises (supposant que les pays ont une currency_id)
       LEFT JOIN currencies from_curr ON fc.currency_id = from_curr.id
       LEFT JOIN currencies to_curr ON tc.currency_id = to_curr.id
-      -- Jointure pour le numéro autorisé
       LEFT JOIN authorized_numbers an ON t.authorized_number_id = an.id
       WHERE 1=1
     `;
@@ -566,14 +687,12 @@ export const findAllTransactions = async ({
       params.push(end_date);
     }
 
-    // NOUVEAU FILTRE: Tracking code
     if (isValidParam(tracking_code)) {
       paramCount++;
       query += ` AND t.tracking_code ILIKE $${paramCount}`;
       params.push(`%${tracking_code}%`);
     }
 
-    // NOUVEAU FILTRE: Devise (recherche dans from_currency et to_currency)
     if (isValidParam(currency_code)) {
       paramCount++;
       query += ` AND (from_curr.code ILIKE $${paramCount} OR to_curr.code ILIKE $${paramCount})`;
@@ -584,12 +703,12 @@ export const findAllTransactions = async ({
     query += ` ORDER BY t.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
     params.push(limitNum, offset);
 
-    console.log('📋 Final query:', query);
-    console.log('🔢 Query params:', params);
+    console.log('📋 Requête finale:', query);
+    console.log('🔢 Paramètres:', params);
 
     // Exécuter la requête
     const { rows } = await client.query(query, params);
-    console.log(`✅ Found ${rows.length} transactions`);
+    console.log(`✅ ${rows.length} transactions trouvées`);
 
     // Récupérer le nombre total pour la pagination
     let countQuery = `
@@ -678,9 +797,9 @@ export const findAllTransactions = async ({
       
       // Ajout des informations formatées
       send_amount_formatted: transaction.send_amount ? 
-        `${transaction.from_currency_symbol || ''}${transaction.send_amount}` : '',
+        `${transaction.from_currency_symbol || ''}${transaction.send_amount.toFixed(2)}` : '',
       receive_amount_formatted: transaction.receive_amount ? 
-        `${transaction.to_currency_symbol || ''}${transaction.receive_amount}` : ''
+        `${transaction.to_currency_symbol || ''}${transaction.receive_amount.toFixed(2)}` : ''
     }));
 
     return {
@@ -693,8 +812,8 @@ export const findAllTransactions = async ({
       }
     };
   } catch (err) {
-    console.error('❌ Error in findAllTransactions:', err);
-    console.error('Error stack:', err.stack);
+    console.error('❌ Erreur récupération transactions:', err);
+    console.error('Stack trace:', err.stack);
     throw new Error(`Erreur lors de la récupération des transactions: ${err.message}`);
   } finally {
     client.release();
@@ -715,13 +834,15 @@ export const findTransactionsByAgent = async (agent_id, {
   try {
     const offset = (page - 1) * limit;
     
+    console.log('🔍 Transactions agent:', { agent_id, page, limit, status });
+    
     let query = `
       SELECT 
         t.*,
         fc.name as from_country_name,
         tc.name as to_country_name,
-        sm.name as sender_method_name,
-        rm.name as receiver_method_name
+        sm.method as sender_method_name,
+        rm.method as receiver_method_name
       FROM transactions t
       LEFT JOIN countries fc ON t.from_country_id = fc.id
       LEFT JOIN countries tc ON t.to_country_id = tc.id
@@ -782,6 +903,8 @@ export const findTransactionsByAgent = async (agent_id, {
     const countResult = await client.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
 
+    console.log(`✅ ${rows.length} transactions trouvées pour l'agent ${agent_id}`);
+
     return {
       transactions: rows,
       pagination: {
@@ -792,6 +915,7 @@ export const findTransactionsByAgent = async (agent_id, {
       }
     };
   } catch (err) {
+    console.error('❌ Erreur transactions agent:', err);
     throw err;
   } finally {
     client.release();
@@ -811,6 +935,8 @@ export const getTransactionStats = async (filters = {}) => {
       start_date = null,
       end_date = null
     } = filters;
+
+    console.log('📊 Statistiques transactions:', filters);
 
     let query = `
       SELECT 
@@ -880,11 +1006,14 @@ export const getTransactionStats = async (filters = {}) => {
       totals.total_receive_amount += parseFloat(row.total_receive_amount);
     });
 
+    console.log('✅ Statistiques calculées:', { statsByStatus, totals });
+
     return {
       by_status: statsByStatus,
       totals
     };
   } catch (err) {
+    console.error('❌ Erreur statistiques transactions:', err);
     throw err;
   } finally {
     client.release();
@@ -906,12 +1035,20 @@ export const redirectTransaction = async ({
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Redirection transaction:', {
+      transaction_id, from_agent_id, to_agent_id, redirected_amount, reason, actor: actor.role
+    });
+
     // Vérifier si transaction existe et appartient bien à from_agent
     const { rows: trxRows } = await client.query(
       `SELECT * FROM transactions WHERE id = $1 FOR UPDATE`,
       [transaction_id]
     );
-    if (!trxRows.length) throw new Error('Transaction introuvable');
+    
+    if (!trxRows.length) {
+      throw new Error('Transaction introuvable');
+    }
+    
     const trx = trxRows[0];
 
     // Vérification complète du statut
@@ -929,6 +1066,7 @@ export const redirectTransaction = async ({
       `SELECT id, name, email FROM agents WHERE id = $1 AND is_active = true`,
       [to_agent_id]
     );
+    
     if (toAgentCheck.rows.length === 0) {
       throw new Error("L'agent destinataire n'existe pas ou est inactif");
     }
@@ -938,10 +1076,10 @@ export const redirectTransaction = async ({
       throw new Error("Montant redirigé invalide");
     }
 
-    // Récupérer les informations détaillées pour l'email (CORRIGÉ)
+    // Récupérer les informations détaillées pour l'email
     const [countriesRes, methodsRes, fromAgentRes] = await Promise.all([
       client.query(`SELECT id, name FROM countries WHERE id = ANY($1)`, [[trx.from_country_id, trx.to_country_id]]),
-      client.query(`SELECT id, name FROM payment_methods WHERE id = ANY($1)`, [[trx.sender_method_id, trx.receiver_method_id]]),
+      client.query(`SELECT id, method FROM payment_methods WHERE id = ANY($1)`, [[trx.sender_method_id, trx.receiver_method_id]]),
       client.query(`SELECT name, email FROM agents WHERE id = $1`, [from_agent_id])
     ]);
 
@@ -952,7 +1090,7 @@ export const redirectTransaction = async ({
 
     const methods = {};
     methodsRes.rows.forEach(method => {
-      methods[method.id] = method.name;
+      methods[method.id] = method.method;
     });
 
     // Insérer la redirection
@@ -1012,10 +1150,11 @@ export const redirectTransaction = async ({
     );
 
     await client.query('COMMIT');
+    console.log('✅ Redirection créée:', redirection.id);
     return redirection;
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Erreur redirection:', err);
+    console.error('❌ Erreur redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -1030,21 +1169,33 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Acceptation redirection:', { redirection_id, agent_id, actor: actor.role });
+
     const { rows: redirRows } = await client.query(
       `SELECT * FROM redirections WHERE id = $1 FOR UPDATE`,
       [redirection_id]
     );
-    if (!redirRows.length) throw new Error('Redirection introuvable');
+    
+    if (!redirRows.length) {
+      throw new Error('Redirection introuvable');
+    }
+    
     const redir = redirRows[0];
-    if (redir.status !== 'pending') throw new Error('Redirection déjà traitée');
+    
+    if (redir.status !== 'pending') {
+      throw new Error('Redirection déjà traitée');
+    }
 
-    if (redir.to_agent_id !== agent_id) throw new Error("Cet agent n'est pas autorisé à accepter");
+    if (redir.to_agent_id !== agent_id) {
+      throw new Error("Cet agent n'est pas autorisé à accepter");
+    }
 
     // Récupérer transaction
     const { rows: trxRows } = await client.query(
       `SELECT * FROM transactions WHERE id = $1 FOR UPDATE`,
       [redir.transaction_id]
     );
+    
     const trx = trxRows[0];
 
     // Vérifier la devise
@@ -1052,6 +1203,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
       `SELECT currency_id FROM payment_methods WHERE id = $1`,
       [trx.receiver_method_id]
     );
+    
     const currency_id = cr[0].currency_id;
 
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
@@ -1123,6 +1275,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
       `SELECT email, name FROM agents WHERE id = $1`,
       [redir.from_agent_id]
     );
+    
     const fromAgent = fromAgentRes.rows[0];
 
     if (fromAgent) {
@@ -1145,9 +1298,11 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     }
 
     await client.query('COMMIT');
+    console.log('✅ Redirection acceptée:', redirection_id);
     return acceptedRedirection;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur acceptation redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -1162,6 +1317,8 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
   try {
     await client.query('BEGIN');
 
+    console.log('🔄 Rejet redirection:', { redirection_id, agent_id, actor: actor.role });
+
     const { rows } = await client.query(
       `UPDATE redirections
        SET status = 'rejected', processed_at = NOW()
@@ -1170,7 +1327,10 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
       [redirection_id, agent_id]
     );
     
-    if (!rows.length) throw new Error('Redirection introuvable ou déjà traitée');
+    if (!rows.length) {
+      throw new Error('Redirection introuvable ou déjà traitée');
+    }
+    
     const rejectedRedirection = rows[0];
 
     // 🔎 Log de rejet de redirection
@@ -1192,6 +1352,7 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
       `SELECT email, name FROM agents WHERE id = $1`,
       [rejectedRedirection.from_agent_id]
     );
+    
     const fromAgent = fromAgentRes.rows[0];
 
     if (fromAgent) {
@@ -1209,6 +1370,7 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
         `SELECT * FROM transactions WHERE id = $1`,
         [rejectedRedirection.transaction_id]
       );
+      
       const transaction = trxRes.rows[0];
 
       await notifyAgentRedirectionStatus(
@@ -1220,9 +1382,11 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
     }
 
     await client.query('COMMIT');
+    console.log('✅ Redirection rejetée:', redirection_id);
     return rejectedRedirection;
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur rejet redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -1236,6 +1400,8 @@ export const expireOldTransactions = async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    
+    console.log('🧹 Nettoyage transactions expirées...');
     
     // N'expirer que les transactions non validées par le client
     const { rows } = await client.query(
@@ -1264,13 +1430,13 @@ export const expireOldTransactions = async () => {
     }
     
     await client.query('COMMIT');
+    console.log(`✅ ${rows.length} transactions expirées nettoyées`);
     return { expiredCount: rows.length };
   } catch (err) {
     await client.query('ROLLBACK');
+    console.error('❌ Erreur nettoyage transactions:', err);
     throw err;
   } finally {
     client.release();
   }
 };
-
-

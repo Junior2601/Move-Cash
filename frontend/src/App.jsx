@@ -30,6 +30,7 @@ import ProtectedRouteAgent from "./components/ui/ProtectedRouteAgent";
 import PublicLayout from "./layouts/PublicLayout";
 import HomePage from "./pages/HomePage";
 import TransactionPage from "./components/public/TransactionForm";
+import TransactionClientDetail from "./components/public/TransactionDetail"
 import TrackingPage from "./components/public/TrackingForm";
 import SupportPage from "./components/public/ServiceClient";
 import CalculatorPage from "./components/public/ConversionCalculator";
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             
             <Route path="/transaction" element={<TransactionPage />} />
+            <Route path="/transaction/:transactionId" element={<TransactionClientDetail />} />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/calculator" element={<CalculatorPage />} />
