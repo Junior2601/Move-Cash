@@ -81,9 +81,9 @@ export const createRate = async (from_currency_id, to_currency_id, rate, commiss
     // Récupérer les noms des devises pour le log
     const currencyNames = await getCurrencyNames(from_currency_id, to_currency_id);
 
-    // 🔎 Log de création de taux
+    // Log de création de taux
     await logHistory({
-      action_type: 'rate_created',
+      action_type: 'Création de taux',
       actor_type: 'admin',
       actor_id: admin_id,
       entity_type: 'rate',
@@ -146,7 +146,7 @@ export const updateRateById = async (id, rate, commission_percent, is_active, ad
     
     const updatedRate = result.rows[0];
 
-    // 🔎 Log de modification de taux
+    // Log de modification de taux
     await logHistory({
       action_type: 'Modification Taux',
       actor_type: 'admin',
@@ -212,7 +212,7 @@ export const deleteRateById = async (id, admin_id = null) => {
     
     const deletedRate = result.rows[0];
 
-    // 🔎 Log de suppression de taux
+    // Log de suppression de taux
     await logHistory({
       action_type: 'rate_deleted',
       actor_type: 'admin',
@@ -241,82 +241,23 @@ export const deleteRateById = async (id, admin_id = null) => {
   }
 };
 
-// Activer/désactiver un taux
-export const toggleRateStatus = async (id, is_active, admin_id = null) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Récupérer les infos du taux avant modification
-    const oldRateResult = await client.query(
-      `SELECT r.*, 
-              fc.code as from_currency_code, 
-              fc.name as from_currency_name,
-              tc.code as to_currency_code,
-              tc.name as to_currency_name
-       FROM rates r
-       JOIN currencies fc ON r.from_currency_id = fc.id
-       JOIN currencies tc ON r.to_currency_id = tc.id
-       WHERE r.id = $1`,
-      [id]
-    );
-    
-    if (oldRateResult.rows.length === 0) {
-      throw new Error('Taux introuvable');
-    }
-    
-    const oldRate = oldRateResult.rows[0];
-
-    const result = await client.query(
-      `UPDATE rates 
-       SET is_active = $1, updated_at = NOW()
-       WHERE id = $2 
-       RETURNING *`,
-      [is_active, id]
-    );
-    
-    const updatedRate = result.rows[0];
-
-    // 🔎 Log de changement de statut
-    await logHistory({
-      action_type: 'rate_status_changed',
-      actor_type: 'admin',
-      actor_id: admin_id,
-      entity_type: 'rate',
-      entity_id: id,
-      description: `Statut du taux modifié: ${oldRate.from_currency_code} → ${oldRate.to_currency_code} - ${is_active ? 'Activé' : 'Désactivé'}`,
-      metadata: { 
-        from_currency: oldRate.from_currency_code,
-        to_currency: oldRate.to_currency_code,
-        from_currency_name: oldRate.from_currency_name,
-        to_currency_name: oldRate.to_currency_name,
-        new_status: is_active,
-        changed_by: admin_id
-      }
-    }, client);
-
-    await client.query('COMMIT');
-    return updatedRate;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
-// Trouver un taux par paire de devises (utilitaire)
+// Trouver un taux par paire de devises
 export const findRateByCurrencies = async (from_currency_id, to_currency_id) => {
   const result = await pool.query(
     `SELECT r.*,
             fc.code as from_currency_code,
             fc.name as from_currency_name,
+            fc.symbol as from_currency_symbol,
             tc.code as to_currency_code,
-            tc.name as to_currency_name
+            tc.name as to_currency_name,
+            tc.symbol as to_currency_symbol
      FROM rates r
      JOIN currencies fc ON r.from_currency_id = fc.id
      JOIN currencies tc ON r.to_currency_id = tc.id
-     WHERE r.from_currency_id = $1 AND r.to_currency_id = $2`,
+     WHERE r.from_currency_id = $1 AND r.to_currency_id = $2
+     AND r.is_active = true
+     ORDER BY r.created_at DESC
+     LIMIT 1`,
     [from_currency_id, to_currency_id]
   );
   return result.rows[0];
@@ -346,4 +287,42 @@ export const getRateHistory = async (rate_id) => {
   `, [rate_id]);
   
   return result.rows;
+};
+
+// Trouver un taux par paire de pays
+export const findRateByCountries = async (from_country_id, to_country_id) => {
+  console.log('🔍 Recherche taux par pays:', { from_country_id, to_country_id });
+  
+  try {
+    const result = await pool.query(
+      `SELECT 
+        r.*,
+        fc.code as from_currency_code,
+        fc.name as from_currency_name,
+        fc.symbol as from_currency_symbol,
+        tc.code as to_currency_code,
+        tc.name as to_currency_name,
+        tc.symbol as to_currency_symbol,
+        from_country.name as from_country_name,
+        to_country.name as to_country_name
+      FROM rates r
+      JOIN countries from_country ON from_country.id = $1
+      JOIN countries to_country ON to_country.id = $2
+      JOIN currencies fc ON r.from_currency_id = fc.id
+      JOIN currencies tc ON r.to_currency_id = tc.id
+      WHERE from_country.currency_id = r.from_currency_id 
+        AND to_country.currency_id = r.to_currency_id
+        AND r.is_active = true
+      ORDER BY r.created_at DESC
+      LIMIT 1`,
+      [from_country_id, to_country_id]
+    );
+    
+    console.log(`✅ Résultat recherche: ${result.rows.length} taux trouvé(s)`);
+    
+    return result.rows[0];
+  } catch (error) {
+    console.error('💥 Erreur recherche taux par pays:', error);
+    throw error;
+  }
 };

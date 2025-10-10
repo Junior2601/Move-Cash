@@ -44,23 +44,29 @@ export default function RatesList() {
   const fetchRates = async () => {
     setLoading(true);
     try {
-      const [ratesRes, activeRatesRes, countriesRes, currenciesRes] = await Promise.all([
-        api.get('/rate'),
-        api.get('/rate/active'),
+      const [ratesRes, countriesRes, currenciesRes] = await Promise.all([
+        api.get('/rate/admin/all'),
         api.get('/country'),
         api.get('/currency/active')
       ]);
+      
+      console.log('Rates chargés:', ratesRes.data);
+      console.log('Devises chargées:', currenciesRes.data);
       
       setAllRates(ratesRes.data || []);
       setRates(ratesRes.data || []);
       setCountries(countriesRes.data || []);
       setCurrencies(currenciesRes.data || []);
+      
+      // Calculer les stats
+      const activeCount = ratesRes.data?.filter(rate => rate.is_active)?.length || 0;
       setStats({
         total: ratesRes.data?.length || 0,
-        active: activeRatesRes.data?.length || 0
+        active: activeCount
       });
     } catch (err) {
       console.error('Erreur lors du chargement:', err);
+      alert('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
@@ -70,18 +76,6 @@ export default function RatesList() {
     fetchRates(); 
   }, []);
 
-  // Fonction pour obtenir l'ID d'une devise à partir de son code
-  const getCurrencyIdFromCode = (currencyCode) => {
-    const currency = currencies.find(c => c.code === currencyCode);
-    return currency ? currency.id : null;
-  };
-
-  // Fonction pour obtenir le code d'une devise à partir de son ID
-  const getCurrencyCodeFromId = (currencyId) => {
-    const currency = currencies.find(c => c.id === currencyId);
-    return currency ? currency.code : null;
-  };
-
   // Filtrer et trier les taux
   useEffect(() => {
     let filteredRates = allRates;
@@ -89,19 +83,20 @@ export default function RatesList() {
     // Filtre par recherche
     if (searchTerm) {
       filteredRates = filteredRates.filter(rate => {
-        const fromCountry = getCurrencyCountry(getCurrencyCodeFromId(rate.from_currency_id));
-        const toCountry = getCurrencyCountry(getCurrencyCodeFromId(rate.to_currency_id));
-        return fromCountry.toLowerCase().includes(searchTerm.toLowerCase()) ||
-               toCountry.toLowerCase().includes(searchTerm.toLowerCase());
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          rate.from_currency_code?.toLowerCase().includes(searchLower) ||
+          rate.to_currency_code?.toLowerCase().includes(searchLower) ||
+          rate.from_currency_name?.toLowerCase().includes(searchLower) ||
+          rate.to_currency_name?.toLowerCase().includes(searchLower)
+        );
       });
     }
 
     // Filtre par devise
     if (currencyFilter !== 'all') {
       filteredRates = filteredRates.filter(rate => {
-        const fromCurrencyCode = getCurrencyCodeFromId(rate.from_currency_id);
-        const toCurrencyCode = getCurrencyCodeFromId(rate.to_currency_id);
-        return fromCurrencyCode === currencyFilter || toCurrencyCode === currencyFilter;
+        return rate.from_currency_code === currencyFilter || rate.to_currency_code === currencyFilter;
       });
     }
 
@@ -119,7 +114,7 @@ export default function RatesList() {
     }
 
     setRates(filteredRates);
-  }, [searchTerm, allRates, currencyFilter, sortConfig, currencies]);
+  }, [searchTerm, allRates, currencyFilter, sortConfig]);
 
   const handleSort = (key) => {
     setSortConfig(prev => ({
@@ -131,21 +126,16 @@ export default function RatesList() {
   const saveRate = async (e) => {
     e.preventDefault();
     try {
-      // Convertir les codes de devise en IDs
-      const from_currency_id = getCurrencyIdFromCode(modal.rate.from_currency);
-      const to_currency_id = getCurrencyIdFromCode(modal.rate.to_currency);
+      console.log('Données du modal:', modal.rate);
       
-      if (!from_currency_id || !to_currency_id) {
-        alert('Erreur: Devise non trouvée');
-        return;
-      }
-
       const rateData = {
-        from_currency_id,
-        to_currency_id,
+        from_currency_id: modal.rate.from_currency_id,
+        to_currency_id: modal.rate.to_currency_id,
         rate: parseFloat(modal.rate.rate),
         commission_percent: parseFloat(modal.rate.commission_percent || 0.75)
       };
+
+      console.log('Données envoyées:', rateData);
 
       if (modal.mode === "add") {
         await api.post('/rate', rateData);
@@ -156,9 +146,7 @@ export default function RatesList() {
       fetchRates();
     } catch (err) {
       console.error('Erreur détaillée:', err);
-      if (err.response?.data?.error) {
-        alert(`Erreur: ${err.response.data.error}`);
-      } else if (err.response?.data?.message) {
+      if (err.response?.data?.message) {
         alert(`Erreur: ${err.response.data.message}`);
       } else {
         alert("Erreur lors de la sauvegarde du taux");
@@ -179,7 +167,7 @@ export default function RatesList() {
 
   // Grouper les taux par devise source
   const groupedRates = rates.reduce((acc, rate) => {
-    const fromCurrencyCode = getCurrencyCodeFromId(rate.from_currency_id);
+    const fromCurrencyCode = rate.from_currency_code;
     if (!fromCurrencyCode) return acc;
     
     if (!acc[fromCurrencyCode]) {
@@ -189,36 +177,13 @@ export default function RatesList() {
     return acc;
   }, {});
 
-  const getCurrencySymbol = (currencyCode) => {
-    if (!currencyCode) return '';
-    const currency = currencies.find(c => c.code === currencyCode);
-    return currency ? currency.symbol : currencyCode;
-  };
-
-  const getCurrencyCountry = (currencyCode) => {
-    if (!currencyCode) return '';
-    
-    // Chercher dans les pays
-    const country = countries.find(c => c.currency_code === currencyCode);
-    if (country) return country.name;
-    
-    // Fallback pour les devises courantes
-    const fallbackCountries = {
-      'USD': 'États-Unis', 'EUR': 'Europe', 'GBP': 'Royaume-Uni', 
-      'JPY': 'Japon', 'RUB': 'Russie', 'XOF': 'Afrique de l\'Ouest',
-      'XAF': 'Afrique Centrale', 'NGN': 'Nigeria', 'GHS': 'Ghana',
-      'ZAR': 'Afrique du Sud'
-    };
-    return fallbackCountries[currencyCode] || currencyCode;
-  };
-
   // Utiliser les devises disponibles
   const availableCurrencies = currencies.map(c => c.code);
   const uniqueCurrencies = [...new Set([
     ...availableCurrencies, 
     ...allRates.flatMap(rate => [
-      getCurrencyCodeFromId(rate.from_currency_id), 
-      getCurrencyCodeFromId(rate.to_currency_id)
+      rate.from_currency_code, 
+      rate.to_currency_code
     ]).filter(Boolean)
   ])];
 
@@ -246,8 +211,8 @@ export default function RatesList() {
             onClick={() => setModal({ 
               mode: "add", 
               rate: { 
-                from_currency: "", 
-                to_currency: "", 
+                from_currency_id: "", 
+                to_currency_id: "", 
                 rate: "", 
                 commission_percent: 0.75 
               } 
@@ -267,7 +232,7 @@ export default function RatesList() {
             <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Rechercher par pays..."
+              placeholder="Rechercher par devise ou pays..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
@@ -292,7 +257,7 @@ export default function RatesList() {
               <option value="all">Toutes les devises</option>
               {uniqueCurrencies.map(currency => (
                 <option key={currency} value={currency}>
-                  {currency} ({getCurrencySymbol(currency)})
+                  {currency}
                 </option>
               ))}
             </select>
@@ -357,10 +322,10 @@ export default function RatesList() {
                 <div>
                   <h2 className="text-lg lg:text-xl font-semibold text-blue-600 flex items-center gap-2">
                     <Globe size={20} />
-                    {currency} ({getCurrencySymbol(currency)})
+                    {currency} ({currencyRates[0]?.from_currency_symbol})
                   </h2>
                   <p className="text-sm text-gray-600">
-                    Pays: {getCurrencyCountry(currency)}
+                    {currencyRates[0]?.from_currency_name}
                   </p>
                 </div>
                 <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
@@ -370,68 +335,67 @@ export default function RatesList() {
 
               {/* Grille des taux */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currencyRates.map((rate) => {
-                  const fromCurrencyCode = getCurrencyCodeFromId(rate.from_currency_id);
-                  const toCurrencyCode = getCurrencyCodeFromId(rate.to_currency_id);
-                  
-                  return (
-                    <div key={rate.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-start mb-3">
-                        <h3 className="font-semibold text-gray-800 text-sm lg:text-base">
-                          {fromCurrencyCode} <ArrowRight size={14} className="inline mx-1" /> {toCurrencyCode}
-                        </h3>
-                        <div className="flex gap-1">
-                          <button
-                            onClick={() => setModal({ 
-                              mode: "edit", 
-                              rate: { 
-                                ...rate, 
-                                from_currency: fromCurrencyCode,
-                                to_currency: toCurrencyCode
-                              } 
-                            })}
-                            className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                            title="Modifier"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button
-                            onClick={() => deleteRate(rate.id)}
-                            className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-gray-500 mb-3">
-                        <div className="flex items-center gap-1">
-                          <Globe size={12} />
-                          {getCurrencyCountry(fromCurrencyCode)} → {getCurrencyCountry(toCurrencyCode)}
-                        </div>
-                      </div>
-
-                      <div className="text-xl lg:text-2xl font-bold text-green-600 mb-2 flex items-center gap-1">
-                        <DollarSign size={20} />
-                        {parseFloat(rate.rate).toFixed(4)}
-                      </div>
-
-                      <p className="text-sm text-gray-600 mb-2">
-                        1 {getCurrencySymbol(fromCurrencyCode)} = {parseFloat(rate.rate).toFixed(4)} {getCurrencySymbol(toCurrencyCode)}
-                      </p>
-
-                      <p className="text-xs text-gray-400 mb-3">
-                        Taux inverse: {(1 / parseFloat(rate.rate)).toFixed(4)}
-                      </p>
-
-                      <div className="flex items-center gap-1 text-xs text-gray-500 pt-2 border-t border-gray-100">
-                        <Percent size={12} />
-                        Commission: {rate.commission_percent}%
+                {currencyRates.map((rate) => (
+                  <div key={rate.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="font-semibold text-gray-800 text-sm lg:text-base">
+                        {rate.from_currency_code} <ArrowRight size={14} className="inline mx-1" /> {rate.to_currency_code}
+                      </h3>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setModal({ 
+                            mode: "edit", 
+                            rate: { 
+                              ...rate,
+                              from_currency_id: rate.from_currency_id,
+                              to_currency_id: rate.to_currency_id
+                            } 
+                          })}
+                          className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                          title="Modifier"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => deleteRate(rate.id)}
+                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div className="text-xs text-gray-500 mb-3">
+                      <div className="flex items-center gap-1">
+                        <Globe size={12} />
+                        {rate.from_currency_name} → {rate.to_currency_name}
+                      </div>
+                    </div>
+
+                    <div className="text-xl lg:text-2xl font-bold text-green-600 mb-2 flex items-center gap-1">
+                      <DollarSign size={20} />
+                      {parseFloat(rate.rate).toFixed(4)}
+                    </div>
+
+                    <p className="text-sm text-gray-600 mb-2">
+                      1 {rate.from_currency_symbol} = {parseFloat(rate.rate).toFixed(4)} {rate.to_currency_symbol}
+                    </p>
+
+                    <p className="text-xs text-gray-400 mb-3">
+                      Taux inverse: {(1 / parseFloat(rate.rate)).toFixed(4)}
+                    </p>
+
+                    <div className="flex items-center gap-1 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                      <Percent size={12} />
+                      Commission: {rate.commission_percent}%
+                    </div>
+                    
+                    <div className={`text-xs mt-2 ${rate.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                      {rate.is_active ? '✅ Actif' : '❌ Inactif'}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -461,14 +425,14 @@ export default function RatesList() {
                     Devise source
                   </label>
                   <select
-                    value={modal.rate.from_currency || ''}
-                    onChange={(e) => setModal({ ...modal, rate: { ...modal.rate, from_currency: e.target.value } })}
+                    value={modal.rate.from_currency_id || ''}
+                    onChange={(e) => setModal({ ...modal, rate: { ...modal.rate, from_currency_id: e.target.value } })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     required
                   >
                     <option value="">Sélectionnez une devise source</option>
                     {currencies.map(currency => (
-                      <option key={`from-${currency.code}`} value={currency.code}>
+                      <option key={`from-${currency.id}`} value={currency.id}>
                         {currency.code} - {currency.name} ({currency.symbol})
                       </option>
                     ))}
@@ -480,14 +444,14 @@ export default function RatesList() {
                     Devise cible
                   </label>
                   <select
-                    value={modal.rate.to_currency || ''}
-                    onChange={(e) => setModal({ ...modal, rate: { ...modal.rate, to_currency: e.target.value } })}
+                    value={modal.rate.to_currency_id || ''}
+                    onChange={(e) => setModal({ ...modal, rate: { ...modal.rate, to_currency_id: e.target.value } })}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     required
                   >
                     <option value="">Sélectionnez une devise cible</option>
                     {currencies.map(currency => (
-                      <option key={`to-${currency.code}`} value={currency.code}>
+                      <option key={`to-${currency.id}`} value={currency.id}>
                         {currency.code} - {currency.name} ({currency.symbol})
                       </option>
                     ))}

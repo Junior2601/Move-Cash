@@ -42,7 +42,7 @@ export const findAllCountries = async () => {
   console.log('🔍 Récupération de tous les pays');
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code, 
               cur.name as currency_name,
               cur.symbol as currency_symbol
@@ -159,7 +159,7 @@ export const createCountry = async (name, code, phone_prefix, currency_id, admin
     console.log('✅ Historique sauvegardé');
 
     await client.query('COMMIT');
-    console.log('� CREATE COUNTRY - Succès');
+    console.log('✅ CREATE COUNTRY - Succès');
     return newCountry;
   } catch (err) {
     await client.query('ROLLBACK');
@@ -208,7 +208,7 @@ export const updateCountryById = async (id, name, code, phone_prefix, currency_i
     // Récupérer l'ancien pays pour le log
     console.log('📋 Récupération ancien pays...');
     const oldCountryResult = await client.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code,
               cur.name as currency_name
        FROM countries c
@@ -265,7 +265,7 @@ export const updateCountryById = async (id, name, code, phone_prefix, currency_i
     console.log('✅ Historique sauvegardé');
 
     await client.query('COMMIT');
-    console.log('🎉 UPDATE COUNTRY - Succès');
+    console.log('✅ UPDATE COUNTRY - Succès');
     
     return updatedCountry;
     
@@ -291,7 +291,7 @@ export const toggleCountryStatusById = async (id, is_active, admin_id = null) =>
     // Récupérer les infos du pays avant modification
     console.log(`🔍 Récupération pays ID: ${id}`);
     const oldCountryResult = await client.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code,
               cur.name as currency_name
        FROM countries c
@@ -341,7 +341,7 @@ export const toggleCountryStatusById = async (id, is_active, admin_id = null) =>
     console.log('✅ Historique sauvegardé');
 
     await client.query('COMMIT');
-    console.log('🎉 TOGGLE COUNTRY STATUS - Succès');
+    console.log('✅ TOGGLE COUNTRY STATUS - Succès');
     return updatedCountry;
   } catch (err) {
     await client.query('ROLLBACK');
@@ -364,7 +364,7 @@ export const deleteCountryById = async (id, admin_id = null) => {
     // Récupérer le pays avant suppression pour le log
     console.log(`🔍 Récupération pays ID: ${id}`);
     const oldCountryResult = await client.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code,
               cur.name as currency_name
        FROM countries c
@@ -413,7 +413,7 @@ export const deleteCountryById = async (id, admin_id = null) => {
     console.log('✅ Historique sauvegardé');
 
     await client.query('COMMIT');
-    console.log('🎉 DELETE COUNTRY - Succès');
+    console.log('✅ DELETE COUNTRY - Succès');
     return deletedCountry;
   } catch (err) {
     await client.query('ROLLBACK');
@@ -429,7 +429,7 @@ export const findCountryById = async (id) => {
   console.log(`🔍 Recherche pays par ID: ${id}`);
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code, 
               cur.name as currency_name,
               cur.symbol as currency_symbol
@@ -451,7 +451,7 @@ export const findCountryByCode = async (code) => {
   console.log(`🔍 Recherche pays par code: ${code}`);
   try {
     const result = await pool.query(
-      `SELECT c.*, 
+      `SELECT c.id, c.name, c.code, c.phone_prefix, c.currency_id, c.is_active, c.created_at, c.updated_at,
               cur.code as currency_code, 
               cur.name as currency_name,
               cur.symbol as currency_symbol

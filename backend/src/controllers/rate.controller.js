@@ -4,7 +4,8 @@ import {
   createRate,
   updateRateById,
   deleteRateById,
-  findRateByCurrencies
+  findRateByCurrencies,
+  findRateByCountries
 } from '../models/rate.repository.js';
 
 // 📌 Liste publique des taux actifs
@@ -39,7 +40,9 @@ export const getAllRates = async (req, res) => {
 export const addRate = async (req, res) => {
   try {
     const { from_currency_id, to_currency_id, rate, commission_percent } = req.body;
-    const admin_id = req.admin?.id; // récupéré via verifyAdminToken
+    const admin_id = req.admin?.id;
+
+    console.log('Données reçues:', { from_currency_id, to_currency_id, rate, commission_percent });
 
     // Validation des données
     if (!from_currency_id || !to_currency_id || !rate) {
@@ -95,6 +98,9 @@ export const updateRate = async (req, res) => {
   try {
     const { id } = req.params;
     const { rate, commission_percent, is_active } = req.body;
+    const admin_id = req.admin?.id;
+
+    console.log('Mise à jour taux:', { id, rate, commission_percent, is_active });
 
     // Validation
     if (rate && parseFloat(rate) <= 0) {
@@ -107,7 +113,8 @@ export const updateRate = async (req, res) => {
       id, 
       rate ? parseFloat(rate) : undefined, 
       commission_percent ? parseFloat(commission_percent) : undefined, 
-      is_active
+      is_active,
+      admin_id
     );
     
     if (!updatedRate) {
@@ -133,8 +140,11 @@ export const updateRate = async (req, res) => {
 export const deleteRate = async (req, res) => {
   try {
     const { id } = req.params;
+    const admin_id = req.admin?.id;
 
-    const deletedRate = await deleteRateById(id);
+    console.log('Suppression taux:', id);
+
+    const deletedRate = await deleteRateById(id, admin_id);
     
     if (!deletedRate) {
       return res.status(404).json({ 
@@ -159,6 +169,12 @@ export const getRateByCurrencies = async (req, res) => {
   try {
     const { from_currency_id, to_currency_id } = req.params;
     
+    if (!from_currency_id || !to_currency_id) {
+      return res.status(400).json({ 
+        message: 'Les IDs des devises sont requis' 
+      });
+    }
+
     const rate = await findRateByCurrencies(from_currency_id, to_currency_id);
     
     if (!rate) {
@@ -167,10 +183,93 @@ export const getRateByCurrencies = async (req, res) => {
       });
     }
     
-    res.json(rate);
+    res.json({
+      success: true,
+      data: rate
+    });
   } catch (error) {
     console.error('Erreur lors de la récupération du taux:', error);
     res.status(500).json({ 
+      message: 'Erreur lors de la récupération du taux', 
+      error: error.message 
+    });
+  }
+};
+
+// 📌 Endpoint générique pour récupérer un taux
+export const getRate = async (req, res) => {
+  try {
+    const { from_country, to_country, from_currency, to_currency } = req.query;
+    
+    let rate;
+
+    // Priorité 1: Recherche par pays
+    if (from_country && to_country) {
+      rate = await findRateByCountries(from_country, to_country);
+    }
+    // Priorité 2: Recherche par devises
+    else if (from_currency && to_currency) {
+      rate = await findRateByCurrencies(from_currency, to_currency);
+    }
+    else {
+      return res.status(400).json({ 
+        message: 'Paramètres de recherche manquants. Utilisez from_country/to_country ou from_currency/to_currency' 
+      });
+    }
+    
+    if (!rate) {
+      return res.status(404).json({ 
+        message: 'Taux non trouvé' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: rate
+    });
+  } catch (error) {
+    console.error('Erreur récupération taux:', error);
+    res.status(500).json({ 
+      message: 'Erreur lors de la récupération du taux', 
+      error: error.message 
+    });
+  }
+};
+
+// 📌 Récupérer un taux par paires de pays
+export const getRateByCountries = async (req, res) => {
+  try {
+    const { from_country_id, to_country_id } = req.params;
+    
+    console.log('🌐 GET /rate/countries - Paramètres:', { from_country_id, to_country_id });
+    
+    if (!from_country_id || !to_country_id) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Les IDs des pays sont requis' 
+      });
+    }
+
+    const rate = await findRateByCountries(from_country_id, to_country_id);
+    
+    if (!rate) {
+      console.log('❌ Aucun taux trouvé pour ces pays');
+      return res.status(404).json({ 
+        success: false,
+        message: 'Taux non trouvé pour cette paire de pays' 
+      });
+    }
+    
+    console.log('✅ Taux trouvé:', rate);
+    
+    res.json({
+      success: true,
+      data: rate
+    });
+  } catch (error) {
+    console.error('💥 Erreur récupération taux par pays:', error);
+    res.status(500).json({ 
+      success: false,
       message: 'Erreur lors de la récupération du taux', 
       error: error.message 
     });

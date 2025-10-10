@@ -27,58 +27,45 @@ export const createTransaction = async ({
       sender_method_id, receiver_method_id, send_amount
     });
 
-    // 1. RÉCUPÉRER LE TAUX DE CHANGE - VERSION CORRIGÉE ET ROBUSTE
+    // 1. RÉCUPÉRER LE TAUX DE CHANGE
     let rate_applied = 0.85; // Taux par défaut
 
     try {
       console.log('🔍 Recherche du taux de change...');
       
-      // Essayer d'abord avec les sous-requêtes (plus fiable)
-      const rateRes = await client.query(
-        `SELECT rate FROM rates 
-         WHERE from_currency_id = (SELECT currency_id FROM countries WHERE id = $1)
-         AND to_currency_id = (SELECT currency_id FROM countries WHERE id = $2)
-         AND is_active = true
-         ORDER BY created_at DESC LIMIT 1`,
+      // Récupérer les devises des pays
+      const currenciesRes = await client.query(
+        `SELECT 
+            fc.currency_id as from_currency_id,
+            tc.currency_id as to_currency_id
+        FROM countries fc, countries tc
+        WHERE fc.id = $1 AND tc.id = $2`,
         [from_country_id, to_country_id]
       );
       
-      if (rateRes.rows.length > 0) {
-        rate_applied = parseFloat(rateRes.rows[0].rate);
-        console.log('✅ Taux trouvé via sous-requêtes:', rate_applied);
-      } else {
-        // Essayer avec la jointure directe
-        const rateRes2 = await client.query(
-          `SELECT r.rate 
-           FROM rates r
-           JOIN countries fc ON r.from_currency_id = fc.currency_id
-           JOIN countries tc ON r.to_currency_id = tc.currency_id
-           WHERE fc.id = $1 AND tc.id = $2
-           AND r.is_active = true
-           ORDER BY r.created_at DESC LIMIT 1`,
-          [from_country_id, to_country_id]
+      if (currenciesRes.rows.length > 0) {
+        const { from_currency_id, to_currency_id } = currenciesRes.rows[0];
+        
+        console.log('💱 Devises trouvées:', { from_currency_id, to_currency_id });
+        
+        // Chercher le taux actif entre ces devises
+        const rateRes = await client.query(
+          `SELECT rate FROM rates 
+          WHERE from_currency_id = $1 
+            AND to_currency_id = $2 
+            AND is_active = true
+          ORDER BY created_at DESC LIMIT 1`,
+          [from_currency_id, to_currency_id]
         );
         
-        if (rateRes2.rows.length > 0) {
-          rate_applied = parseFloat(rateRes2.rows[0].rate);
-          console.log('✅ Taux trouvé via jointure:', rate_applied);
+        if (rateRes.rows.length > 0) {
+          rate_applied = parseFloat(rateRes.rows[0].rate);
+          console.log('✅ Taux trouvé:', rate_applied);
         } else {
-          console.log('⚠️ Aucun taux trouvé, utilisation taux par défaut 0.85');
-          
-          // Log pour debug - vérifier les devises des pays
-          const currenciesCheck = await client.query(
-            `SELECT 
-              fc.id as from_country_id, fc.name as from_country, fc.currency_id as from_currency,
-              tc.id as to_country_id, tc.name as to_country, tc.currency_id as to_currency
-             FROM countries fc, countries tc
-             WHERE fc.id = $1 AND tc.id = $2`,
-            [from_country_id, to_country_id]
-          );
-          
-          if (currenciesCheck.rows.length > 0) {
-            console.log('💱 Paires de devises:', currenciesCheck.rows[0]);
-          }
+          console.warn('⚠️ Aucun taux actif trouvé, utilisation du taux par défaut');
         }
+      } else {
+        console.warn('⚠️ Impossible de récupérer les devises des pays');
       }
     } catch (rateError) {
       console.warn('⚠️ Erreur récupération taux, utilisation défaut:', rateError.message);
@@ -785,22 +772,39 @@ export const findAllTransactions = async ({
     const countResult = await client.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].count);
 
-    // Formater les dates pour la réponse
-    const formattedTransactions = rows.map(transaction => ({
-      ...transaction,
-      created_at: transaction.created_at ? new Date(transaction.created_at).toISOString() : null,
-      updated_at: transaction.updated_at ? new Date(transaction.updated_at).toISOString() : null,
-      expires_at: transaction.expires_at ? new Date(transaction.expires_at).toISOString() : null,
-      completed_at: transaction.completed_at ? new Date(transaction.completed_at).toISOString() : null,
-      cancelled_at: transaction.cancelled_at ? new Date(transaction.cancelled_at).toISOString() : null,
-      client_validated_at: transaction.client_validated_at ? new Date(transaction.client_validated_at).toISOString() : null,
-      
-      // Ajout des informations formatées
-      send_amount_formatted: transaction.send_amount ? 
-        `${transaction.from_currency_symbol || ''}${transaction.send_amount.toFixed(2)}` : '',
-      receive_amount_formatted: transaction.receive_amount ? 
-        `${transaction.to_currency_symbol || ''}${transaction.receive_amount.toFixed(2)}` : ''
-    }));
+    // Formater les transactions avec gestion des valeurs nulles
+    const formattedTransactions = rows.map(transaction => {
+      // Convertir les montants en nombres de manière sécurisée
+      const sendAmount = parseFloat(transaction.send_amount) || 0;
+      const receiveAmount = parseFloat(transaction.receive_amount) || 0;
+      const rateApplied = parseFloat(transaction.rate_applied) || 0;
+      const commissionApplied = parseFloat(transaction.commission_applied) || 0;
+
+      return {
+        ...transaction,
+        // Conversion explicite des montants en nombres
+        send_amount: sendAmount,
+        receive_amount: receiveAmount,
+        rate_applied: rateApplied,
+        commission_applied: commissionApplied,
+        
+        // Formatage des dates
+        created_at: transaction.created_at ? new Date(transaction.created_at).toISOString() : null,
+        updated_at: transaction.updated_at ? new Date(transaction.updated_at).toISOString() : null,
+        expires_at: transaction.expires_at ? new Date(transaction.expires_at).toISOString() : null,
+        completed_at: transaction.completed_at ? new Date(transaction.completed_at).toISOString() : null,
+        cancelled_at: transaction.cancelled_at ? new Date(transaction.cancelled_at).toISOString() : null,
+        client_validated_at: transaction.client_validated_at ? new Date(transaction.client_validated_at).toISOString() : null,
+        
+        // Ajout des informations formatées avec gestion d'erreur
+        send_amount_formatted: sendAmount > 0 ? 
+          `${transaction.from_currency_symbol || ''}${sendAmount.toFixed(2)}` : '0.00',
+        receive_amount_formatted: receiveAmount > 0 ? 
+          `${transaction.to_currency_symbol || ''}${receiveAmount.toFixed(2)}` : '0.00'
+      };
+    });
+
+    console.log('✅ Transactions formatées avec succès');
 
     return {
       transactions: formattedTransactions,

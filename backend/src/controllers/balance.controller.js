@@ -1,11 +1,35 @@
 import { 
+  findAllBalances,
   findBalancesByAgent, 
   findBalanceByCurrency, 
   createBalance, 
   creditBalance, 
   debitBalance, 
-  transferBalance 
+  transferBalance,
+  deleteBalanceById
 } from '../models/balance.repository.js';
+
+// =========================
+// Obtenir TOUTES les balances (admin seulement)
+// =========================
+export const getAllBalances = async (req, res) => {
+  try {
+    const balances = await findAllBalances();
+    
+    res.status(200).json({
+      success: true,
+      data: balances,
+      message: 'Toutes les balances récupérées avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur getAllBalances:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération des balances',
+      error: error.message
+    });
+  }
+};
 
 // =========================
 // Obtenir toutes les balances d'un agent
@@ -76,7 +100,7 @@ export const getAgentBalanceByCurrency = async (req, res) => {
 export const createAgentBalance = async (req, res) => {
   try {
     const { agent_id, currency_id } = req.body;
-    const actor = req.user; // Utilisateur authentifié
+    const actor = req.user;
     
     if (!agent_id || !currency_id) {
       return res.status(400).json({ message: 'ID agent et devise requis' });
@@ -113,7 +137,7 @@ export const createAgentBalance = async (req, res) => {
 export const creditAgentBalance = async (req, res) => {
   try {
     const { agent_id, currency_id, amount, reason } = req.body;
-    const actor = req.user; // Utilisateur authentifié
+    const actor = req.user;
     
     if (!agent_id || !currency_id || !amount) {
       return res.status(400).json({ message: 'ID agent, devise et montant requis' });
@@ -125,13 +149,6 @@ export const creditAgentBalance = async (req, res) => {
 
     const balance = await creditBalance(agent_id, currency_id, amount, actor, reason);
     
-    if (!balance) {
-      return res.status(404).json({
-        success: false,
-        message: 'Balance non trouvée'
-      });
-    }
-
     res.status(200).json({
       success: true,
       data: balance,
@@ -153,7 +170,7 @@ export const creditAgentBalance = async (req, res) => {
 export const debitAgentBalance = async (req, res) => {
   try {
     const { agent_id, currency_id, amount, reason } = req.body;
-    const actor = req.user; // Utilisateur authentifié
+    const actor = req.user;
     
     if (!agent_id || !currency_id || !amount) {
       return res.status(400).json({ message: 'ID agent, devise et montant requis' });
@@ -165,13 +182,6 @@ export const debitAgentBalance = async (req, res) => {
 
     const balance = await debitBalance(agent_id, currency_id, amount, actor, reason);
     
-    if (!balance) {
-      return res.status(404).json({
-        success: false,
-        message: 'Balance non trouvée ou solde insuffisant'
-      });
-    }
-
     res.status(200).json({
       success: true,
       data: balance,
@@ -187,9 +197,53 @@ export const debitAgentBalance = async (req, res) => {
       });
     }
 
+    if (error.message === 'Balance introuvable') {
+      return res.status(404).json({
+        success: false,
+        message: 'Balance non trouvée'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Erreur serveur lors du débit de la balance',
+      error: error.message
+    });
+  }
+};
+
+// =========================
+// Supprimer une balance
+// =========================
+export const deleteBalance = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const actor = req.user;
+    
+    if (!id) {
+      return res.status(400).json({ message: 'ID balance requis' });
+    }
+
+    // ✅ CORRECTION : Ajout du paramètre actor
+    const balance = await deleteBalanceById(id, actor);
+    
+    if (!balance) {
+      return res.status(404).json({
+        success: false,
+        message: 'Balance non trouvée'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Balance supprimée avec succès',
+      data: balance
+    });
+  } catch (error) {
+    console.error('Erreur deleteBalance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la suppression de la balance',
       error: error.message
     });
   }
@@ -201,7 +255,7 @@ export const debitAgentBalance = async (req, res) => {
 export const transferBetweenBalances = async (req, res) => {
   try {
     const { from_agent_id, to_agent_id, currency_id, amount, reason } = req.body;
-    const actor = req.user; // Utilisateur authentifié
+    const actor = req.user;
     
     if (!from_agent_id || !to_agent_id || !currency_id || !amount) {
       return res.status(400).json({ 
@@ -293,9 +347,12 @@ export const checkBalance = async (req, res) => {
   }
 };
 
+// =========================
+// Obtenir les balances de l'agent connecté
+// =========================
 export const getMyBalances = async (req, res) => {
   try {
-    const user = req.user; // Utilisateur authentifié
+    const user = req.user;
     
     if (user.role !== 'agent') {
       return res.status(403).json({

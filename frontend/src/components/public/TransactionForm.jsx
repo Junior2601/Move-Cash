@@ -109,49 +109,62 @@ export default function TransactionForm({ onTransactionComplete }) {
   const senderPaymentMethods = getPaymentMethodsByCountryId(formData.senderCountryId);
   const receiverPaymentMethods = getPaymentMethodsByCountryId(formData.receiverCountryId);
 
-  // Calculer le taux de change - VERSION SIMPLIFIÉE
+  // Calculer le taux de change - VERSION SIMPLIFIÉE ET ROBUSTE
   useEffect(() => {
     if (formData.sentAmount && formData.sentAmount > 0 && formData.senderCountryId && formData.receiverCountryId) {
       const calculateExchangeRate = async () => {
         try {
           console.log('🔄 Calcul du taux de change...');
           
-          // ESSAYER L'ENDPOINT RATES
+          const senderCountry = getCountryById(formData.senderCountryId);
+          const receiverCountry = getCountryById(formData.receiverCountryId);
+          
+          if (!senderCountry || !receiverCountry) {
+            console.warn('❌ Pays non trouvés');
+            const defaultRate = 0.85;
+            setExchangeRate(defaultRate);
+            setReceivedAmount(formData.sentAmount * defaultRate);
+            return;
+          }
+
+          console.log('💱 Pays sélectionnés:', {
+            from: senderCountry.name,
+            to: receiverCountry.name,
+            from_currency: senderCountry.currency_code,
+            to_currency: receiverCountry.currency_code
+          });
+
+          // ESSAYER LE NOUVEL ENDPOINT COUNTRIES
           try {
-            const response = await api.get('/rate', {
-              params: {
-                from_country: formData.senderCountryId,
-                to_country: formData.receiverCountryId
-              },
-              timeout: 3000
-            });
+            console.log('🌐 Appel endpoint /rate/countries...');
+            const response = await api.get(`/rate/countries/${formData.senderCountryId}/${formData.receiverCountryId}`);
             
-            if (response.data && response.data.rate) {
-              const rate = parseFloat(response.data.rate);
-              console.log('✅ Taux de change API:', rate);
+            if (response.data && response.data.success && response.data.data) {
+              const rate = parseFloat(response.data.data.rate);
+              console.log('✅ Taux de change API (countries):', rate);
               setExchangeRate(rate);
               setReceivedAmount(formData.sentAmount * rate);
               return;
             }
-          } catch (rateError) {
-            console.warn('⚠️ Endpoint /rates non disponible:', rateError.message);
+          } catch (countriesError) {
+            console.warn('⚠️ Endpoint /rate/countries non disponible:', countriesError.message);
           }
-          
-          // ESSAYER L'ENDPOINT ACTIVE RATES
+
+          // ESSAYER L'ENDPOINT ACTIVE RATES (fallback)
           try {
-            const activeRatesResponse = await api.get('/rate/active', {
-              timeout: 3000
-            });
+            console.log('🌐 Appel endpoint /rate/active...');
+            const activeRatesResponse = await api.get('/rate/active');
             
             if (activeRatesResponse.data && Array.isArray(activeRatesResponse.data)) {
+              // Chercher le taux correspondant aux devises des pays
               const rateData = activeRatesResponse.data.find(rate => 
-                rate.from_country_id === parseInt(formData.senderCountryId) && 
-                rate.to_country_id === parseInt(formData.receiverCountryId)
+                rate.from_currency_code === senderCountry.currency_code && 
+                rate.to_currency_code === receiverCountry.currency_code
               );
               
               if (rateData && rateData.rate) {
                 const rate = parseFloat(rateData.rate);
-                console.log('✅ Taux de change trouvé dans rate/active:', rate);
+                console.log('✅ Taux de change trouvé dans /active:', rate);
                 setExchangeRate(rate);
                 setReceivedAmount(formData.sentAmount * rate);
                 return;
@@ -160,8 +173,29 @@ export default function TransactionForm({ onTransactionComplete }) {
           } catch (activeRatesError) {
             console.warn('⚠️ Endpoint /rate/active non disponible:', activeRatesError.message);
           }
+
+          // ESSAYER L'ENDPOINT GÉNÉRIQUE
+          try {
+            console.log('🌐 Appel endpoint /rate...');
+            const genericResponse = await api.get('/rate', {
+              params: {
+                from_country: formData.senderCountryId,
+                to_country: formData.receiverCountryId
+              }
+            });
+            
+            if (genericResponse.data && genericResponse.data.success && genericResponse.data.data) {
+              const rate = parseFloat(genericResponse.data.data.rate);
+              console.log('✅ Taux de change API (générique):', rate);
+              setExchangeRate(rate);
+              setReceivedAmount(formData.sentAmount * rate);
+              return;
+            }
+          } catch (genericError) {
+            console.warn('⚠️ Endpoint /rate non disponible:', genericError.message);
+          }
           
-          // TAUX PAR DÉFAUT basé sur les devises
+          // TAUX PAR DÉFAUT
           const defaultRate = getDefaultExchangeRate(senderCountry, receiverCountry);
           console.log('💰 Taux par défaut appliqué:', defaultRate);
           setExchangeRate(defaultRate);
@@ -169,6 +203,8 @@ export default function TransactionForm({ onTransactionComplete }) {
           
         } catch (error) {
           console.warn('⚠️ Erreur calcul taux, utilisation valeur par défaut:', error.message);
+          const senderCountry = getCountryById(formData.senderCountryId);
+          const receiverCountry = getCountryById(formData.receiverCountryId);
           const defaultRate = getDefaultExchangeRate(senderCountry, receiverCountry);
           setExchangeRate(defaultRate);
           setReceivedAmount(formData.sentAmount * defaultRate);
@@ -180,11 +216,15 @@ export default function TransactionForm({ onTransactionComplete }) {
       setReceivedAmount(0);
       setExchangeRate(0);
     }
-  }, [formData.sentAmount, formData.senderCountryId, formData.receiverCountryId, senderCountry, receiverCountry]);
+  }, [formData.sentAmount, formData.senderCountryId, formData.receiverCountryId]);
 
   // Fonction pour obtenir un taux par défaut basé sur les devises
   const getDefaultExchangeRate = (fromCountry, toCountry) => {
     if (!fromCountry || !toCountry) return 0.85;
+    
+    // Récupérer les codes de devise depuis les pays
+    const fromCurrency = fromCountry.currency_code || 'EUR';
+    const toCurrency = toCountry.currency_code || 'EUR';
     
     // Taux fictifs basés sur les paires de devises courantes
     const rateMap = {
@@ -194,9 +234,16 @@ export default function TransactionForm({ onTransactionComplete }) {
       'XOF-EUR': 0.00152,
       'USD-XOF': 600.0,
       'XOF-USD': 0.00167,
+      'EUR-CFA': 655.96,
+      'CFA-EUR': 0.00152,
+      'USD-CFA': 600.0,
+      'CFA-USD': 0.00167,
+      'XOF-XOF': 1.0,
+      'EUR-EUR': 1.0,
+      'USD-USD': 1.0,
     };
     
-    const pair = `${fromCountry.currency_code}-${toCountry.currency_code}`;
+    const pair = `${fromCurrency}-${toCurrency}`;
     return rateMap[pair] || 0.85;
   };
 
