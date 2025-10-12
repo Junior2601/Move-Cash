@@ -3,12 +3,36 @@ import TransactionForm from '../components/public/TransactionForm';
 import TrackingForm from '../components/public/TrackingForm';
 import ServiceClient from '../components/public/ServiceClient';
 import ConversionCalculator from '../components/public/ConversionCalculator';
-import { Send, Search, HeadphonesIcon, Calculator } from 'lucide-react';
+import { Send, Search, HeadphonesIcon, Calculator, ChevronLeft, ChevronRight } from 'lucide-react';
+import heroImage from '../assets/fond.png';
 
 export default function HomePage() {
   const [activeSection, setActiveSection] = useState('transaction');
   const [isLoading, setIsLoading] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  // Données du carousel
+  const carouselSlides = [
+    {
+      id: 1,
+      image: heroImage,
+      title: "Transférez de l'argent dans le monde",
+      subtitle: "Rapide, sécurisé et sans création de compte"
+    },
+    {
+      id: 2,
+      image: heroImage, // Vous pouvez utiliser une image différente
+      title: "Des transferts instantanés",
+      subtitle: "Recevez votre argent en quelques minutes seulement"
+    },
+    {
+      id: 3,
+      image: heroImage, // Vous pouvez utiliser une image différente
+      title: "Des taux compétitifs",
+      subtitle: "Les meilleurs taux de change pour vos transferts"
+    }
+  ];
 
   useEffect(() => {
     // Animation de la barre de progression
@@ -20,7 +44,7 @@ export default function HomePage() {
         }
         return prev + 2;
       });
-    }, 40); // Augmente de 2% toutes les 40ms = 2 secondes pour 100%
+    }, 40);
 
     // Timer pour masquer le loader
     const timer = setTimeout(() => {
@@ -32,6 +56,28 @@ export default function HomePage() {
       clearTimeout(timer);
     };
   }, []);
+
+  // Auto-play du carousel
+  useEffect(() => {
+    if (!isLoading) {
+      const interval = setInterval(() => {
+        setCurrentSlide((prev) => (prev + 1) % carouselSlides.length);
+      }, 5000); // Change de slide toutes les 5 secondes
+      return () => clearInterval(interval);
+    }
+  }, [isLoading, carouselSlides.length]);
+
+  const nextSlide = () => {
+    setCurrentSlide((prev) => (prev + 1) % carouselSlides.length);
+  };
+
+  const prevSlide = () => {
+    setCurrentSlide((prev) => (prev - 1 + carouselSlides.length) % carouselSlides.length);
+  };
+
+  const goToSlide = (index) => {
+    setCurrentSlide(index);
+  };
 
   const sections = [
     {
@@ -132,7 +178,7 @@ export default function HomePage() {
             <div className="text-blue-100 text-sm space-y-1">
               <p className="animate-pulse">Initialisation des services...</p>
               <p className="text-xs text-blue-200 opacity-80">
-                Transfert Russie ↔ Afrique
+                Move Cash
               </p>
             </div>
           </div>
@@ -158,15 +204,72 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Section Hero */}
-      <header className="bg-gradient-to-r from-blue-700 to-blue-500 text-white py-20 text-center">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            Transférez de l'argent Russie ↔ Afrique
-          </h1>
-          <p className="text-lg md:text-xl text-blue-100">
-            Rapide, sécurisé et sans création de compte
-          </p>
+      {/* Section Hero avec Carousel */}
+      <header className="relative h-96 md:h-[500px] overflow-hidden">
+        {/* Conteneur du carousel */}
+        <div className="relative w-full h-full">
+          {carouselSlides.map((slide, index) => (
+            <div
+              key={slide.id}
+              className={`absolute inset-0 transition-opacity duration-500 ease-in-out ${
+                index === currentSlide ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              {/* Image de fond */}
+              <div
+                className="w-full h-full bg-cover bg-center bg-no-repeat"
+                style={{ backgroundImage: `url(${slide.image})` }}
+              >
+                {/* Overlay pour améliorer la lisibilité */}
+                <div className="absolute inset-0 bg-black bg-opacity-50"></div>
+                
+                {/* Contenu du slide */}
+                <div className="relative h-full flex items-center justify-center text-center">
+                  <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <h1 className="text-3xl md:text-5xl font-bold mb-4 text-white animate-fade-in">
+                      {slide.title}
+                    </h1>
+                    <p className="text-lg md:text-xl text-gray-200 animate-fade-in-up">
+                      {slide.subtitle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Boutons de navigation */}
+        <button
+          onClick={prevSlide}
+          className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-2 rounded-full transition-all duration-300"
+          aria-label="Slide précédent"
+        >
+          <ChevronLeft className="h-6 w-6" />
+        </button>
+        
+        <button
+          onClick={nextSlide}
+          className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white p-2 rounded-full transition-all duration-300"
+          aria-label="Slide suivant"
+        >
+          <ChevronRight className="h-6 w-6" />
+        </button>
+
+        {/* Indicateurs de slide */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+          {carouselSlides.map((_, index) => (
+            <button
+              key={index}
+              onClick={() => goToSlide(index)}
+              className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                index === currentSlide 
+                  ? 'bg-white scale-125' 
+                  : 'bg-white bg-opacity-50 hover:bg-opacity-75'
+              }`}
+              aria-label={`Aller au slide ${index + 1}`}
+            />
+          ))}
         </div>
       </header>
 
@@ -250,14 +353,14 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
           <div className="xl:grid xl:grid-cols-3 xl:gap-8">
             <div className="space-y-8 xl:col-span-1">
-              <div className="flex items-center space-x-3">
+              {/* <div className="flex items-center space-x-3">
                 <div className="bg-blue-600 p-2 rounded-lg">
                   <Send className="h-6 w-6 text-white" />
                 </div>
                 <span className="text-white text-xl font-bold">MoveCash</span>
-              </div>
+              </div> */}
               <p className="text-gray-400 text-base">
-                La plateforme de confiance pour vos transferts d'argent entre la Russie et l'Afrique.
+                La plateforme de confiance pour vos transferts d'argent dans le monde.
               </p>
             </div>
             <div className="mt-12 grid grid-cols-2 gap-8 xl:mt-0 xl:col-span-2">
@@ -318,13 +421,31 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-          <div className="mt-12 border-t border-gray-700 pt-8">
+          {/* <div className="mt-12 border-t border-gray-700 pt-8">
             <p className="text-base text-gray-400 xl:text-center">
               © {new Date().getFullYear()} MoveCash. Tous droits réservés.
             </p>
-          </div>
+          </div> */}
         </div>
       </footer>
+
+      {/* Styles pour les animations */}
+      <style jsx>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(30px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.8s ease-out;
+        }
+        .animate-fade-in-up {
+          animation: fade-in-up 0.8s ease-out 0.2s both;
+        }
+      `}</style>
     </div>
   );
 }

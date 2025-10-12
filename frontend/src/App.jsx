@@ -15,17 +15,13 @@ import HistoryList from './pages/admin/HistoryList';
 import AdminLayout from './components/ui/AdminLayout';
 import ProtectedRoute from './components/ui/ProtectedRoute';
 
-
 import AgentLogin from "./pages/Agents/AgentLogin";
 import AgentDashboard from "./pages/Agents/AgentDashboard";
 import TransactionList from "./pages/Agents/MyTransactions";
 import TransactionDetail from "./pages/Agents/TransactionDetail";
 import MyBalances from "./pages/agents/MyBalances";
-// import AgentHistory from "./pages/Agents/History";
 import AgentLayout from "./layouts/AgentLayout";
 import ProtectedRouteAgent from "./components/ui/ProtectedRouteAgent";
-// import NotFound from './pages/NotFound';
-
 
 import PublicLayout from "./layouts/PublicLayout";
 import HomePage from "./pages/HomePage";
@@ -35,19 +31,21 @@ import TrackingPage from "./components/public/TrackingForm";
 import SupportPage from "./components/public/ServiceClient";
 import CalculatorPage from "./components/public/ConversionCalculator";
 
-
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Route login admin */}
           <Route path="/admin/login" element={<Login />} />
 
+          {/* Routes admin protégées - CORRECTION ICI */}
           <Route path="/admin" element={
             <ProtectedRoute>
               <AdminLayout />
             </ProtectedRoute>
           }>
+            <Route index element={<Dashboard />} /> {/* Route par défaut */}
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="agents" element={<AgentsList />} />
             <Route path="agents/:id" element={<AgentDetail />} />
@@ -58,39 +56,36 @@ export default function App() {
             <Route path="numbers" element={<AuthorizedNumbersList />} />
             <Route path="transactions" element={<TransactionsList />} />
             <Route path="historiques" element={<HistoryList />} />
-            {/* autres routes admin */}
           </Route>
 
-          {/* <Route path="*" element={<NotFound />} /> */}
-
+          {/* Routes agent */}
           <Route path="/agent/login" element={<AgentLogin />} />
+          <Route
+            path="/agent"
+            element={
+              <ProtectedRouteAgent>
+                <AgentLayout />
+              </ProtectedRouteAgent>
+            }
+          >
+            <Route path="dashboard" element={<AgentDashboard />} />
+            <Route path="transactions" element={<TransactionList />} />
+            <Route path="transactions/:id" element={<TransactionDetail />} />
+            <Route path="balances" element={<MyBalances />} />
+          </Route>
 
-            <Route
-              path="/agent"
-              element={
-                <ProtectedRouteAgent>
-                  <AgentLayout />
-                </ProtectedRouteAgent>
-              }
-            >
-              <Route path="dashboard" element={<AgentDashboard />} />
-              <Route path="transactions" element={<TransactionList />} />
-              <Route path="transactions/:id" element={<TransactionDetail />} />
-              <Route path="balances" element={<MyBalances />} />
-              {/* <Route path="history" element={<AgentHistory />} /> */}
-            </Route>
-
+          {/* Routes publiques */}
           <Route element={<PublicLayout />}>
             <Route path="/" element={<HomePage />} />
-            
             <Route path="/transaction" element={<TransactionPage />} />
             <Route path="/transaction/:transactionId" element={<TransactionClientDetail />} />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/calculator" element={<CalculatorPage />} />
-
           </Route>
 
+          {/* Route 404 */}
+          {/* <Route path="*" element={<NotFound />} /> */}
         </Routes>
       </BrowserRouter>
     </AuthProvider>

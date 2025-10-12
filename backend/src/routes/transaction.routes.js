@@ -11,7 +11,11 @@ import {
   acceptRedirectionController,
   rejectRedirectionController,
   getAllTransactionsController,
-  getTransactionStatsController
+  getAgentTransactionsController,
+  getTransactionStatsController,
+  getAgentPersonalStatsController,
+  getAgentGainsHistoryController,
+  getAgentDashboardController
 } from '../controllers/transaction.controller.js';
 
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
@@ -19,42 +23,66 @@ import { debugDatabase } from '../middlewares/debug.middleware.js';
 
 const router = express.Router();
 
-// ============= PUBLIC =============
-// Créer une transaction
+// ============= PUBLIC ROUTES =============
+
+// Créer une transaction (Client)
 router.post('/', createTransactionController);
 
-
-
-// Voir toutes les transactions (admin)
-router.get('/all-transactions',debugDatabase, verifyAdminToken, getAllTransactionsController);
-
-// Voir les transactions par status
-router.get('/stats', verifyAdminToken, getTransactionStatsController);
-
-// validation par le client
+// Validation par le client
 router.post('/:id/client-validate', clientValidateTransactionController);
 
-// Suivi (par ID ou tracking code)
+// Suivi de transaction (par ID ou tracking code) - Public
 router.get('/:transaction_id', getTransactionByIdController);
 router.get('/tracking/:tracking_code', getTransactionByTrackingCodeController);
 
-// ============= ADMIN / AGENT =============
+// ============= AGENT PERSONAL ROUTES =============
 
-// Valider transaction
-router.put('/:transaction_id/validate', verifyAdminToken, validateTransactionController);
+// Dashboard agent (statistiques personnelles complètes)
+router.get('/agent/dashboard', verifyAgentToken, getAgentDashboardController);
+
+// Statistiques personnelles de l'agent
+router.get('/agent/stats', verifyAgentToken, getAgentPersonalStatsController);
+
+// Historique des gains de l'agent
+router.get('/agent/gains/history', verifyAgentToken, getAgentGainsHistoryController);
+
+// Transactions de l'agent (ses propres transactions)
+router.get('/agent/transactions', verifyAgentToken, (req, res) => {
+  // Rediriger vers la fonction existante avec l'ID de l'agent connecté
+  req.params.agent_id = req.user.id;
+  return getAgentTransactionsController(req, res);
+});
+
+// Valider une transaction (Agent)
 router.put('/:transaction_id/validate-agent', verifyAgentToken, validateTransactionController);
 
-// Annuler transaction
-router.put('/:transaction_id/cancel', verifyAdminToken, cancelTransactionController);
+// Annuler une transaction (Agent)
 router.put('/:transaction_id/cancel-agent', verifyAgentToken, cancelTransactionController);
 
-// Un agent initie une redirection
-router.post('/:transaction_id/redirect', verifyAgentToken, redirectTransactionController);
+// Rediriger une transaction (Agent)
+router.post('/redirect', verifyAgentToken, redirectTransactionController);
 
-// L’agent destinataire accepte la redirection
+// Accepter une redirection (Agent)
 router.put('/redirections/:redirection_id/accept', verifyAgentToken, acceptRedirectionController);
 
-// L’agent destinataire rejette la redirection
+// Rejeter une redirection (Agent)
 router.put('/redirections/:redirection_id/reject', verifyAgentToken, rejectRedirectionController);
+
+// ============= ADMIN ROUTES =============
+
+// Voir toutes les transactions (Admin)
+router.get('/admin/all-transactions', debugDatabase, verifyAdminToken, getAllTransactionsController);
+
+// Statistiques globales (Admin)
+router.get('/admin/stats', verifyAdminToken, getTransactionStatsController);
+
+// Valider une transaction (Admin)
+router.put('/:transaction_id/validate', verifyAdminToken, validateTransactionController);
+
+// Annuler une transaction (Admin)
+router.put('/:transaction_id/cancel', verifyAdminToken, cancelTransactionController);
+
+// Transactions d'un agent spécifique (Admin)
+router.get('/admin/agent/:agent_id/transactions', verifyAdminToken, getAgentTransactionsController);
 
 export default router;

@@ -31,6 +31,9 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
+// Routes publics
+app.use('/api/transactions', transactionRoutes);
+
 // Routes sécurisées (admin / agent)
 app.use('/api/admin', adminRoutes);
 app.use('/api/agent', agentRoutes);
@@ -42,12 +45,9 @@ app.use('/api/numero_autorise', authorizedNumberRoutes);
 app.use('/api/balance', balanceRoutes);
 app.use('/api/gain', gainRoutes);
 app.use('/api/history', historyRoutes);
-app.use('/api/admin', cleanupRoutes); // Protégez cette route avec une authentification admin!
-app.use('/api', statisticsRoutes);
+app.use('/api/admin', cleanupRoutes);
+app.use('/api/statistic', statisticsRoutes);
 
-
-// Routes publics
-app.use('/api/transactions', transactionRoutes);
 
 
 // Démarrer le service

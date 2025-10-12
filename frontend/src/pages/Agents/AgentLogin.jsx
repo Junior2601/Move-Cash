@@ -19,14 +19,30 @@ export default function AgentLogin() {
 
     try {
       const res = await api.post("/agent/login", form);
+      
+      console.log("🔍 Réponse complète de l'API:", res);
+      console.log("🔍 Données de la réponse:", res.data);
+      
+      // CORRECTION : Utiliser res.data directement (pas res.data.data)
       const { token, agent } = res.data;
 
-      localStorage.setItem("agentToken", token);
-      localStorage.setItem("agentInfo", JSON.stringify(agent));
+      // Vérifier si le token existe
+      if (!token) {
+        console.error("❌ Token manquant dans la réponse");
+        setError("Erreur d'authentification: token manquant");
+        return;
+      }
 
+      localStorage.setItem("agent_token", token);
+      localStorage.setItem("agent_info", JSON.stringify(agent));
+
+      console.log("✅ Connexion réussie, token stocké:", token);
+      console.log("🔍 Agent info:", agent);
+      console.log("🔍 Redirection vers /agent/dashboard");
+      
       navigate("/agent/dashboard");
     } catch (err) {
-      console.error("Erreur login agent", err);
+      console.error("❌ Erreur login agent", err);
       setError(
         err.response?.data?.message || "Échec de connexion. Vérifiez vos identifiants."
       );
@@ -59,6 +75,7 @@ export default function AgentLogin() {
               onChange={handleChange}
               required
               className="w-full px-3 py-2 border rounded-lg focus:ring focus:ring-blue-200"
+              placeholder="votre@email.com"
             />
           </div>
 
@@ -71,13 +88,14 @@ export default function AgentLogin() {
               onChange={handleChange}
               required
               className="w-full px-3 py-2 border rounded-lg focus:ring focus:ring-blue-200"
+              placeholder="Votre mot de passe"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg"
+            className="w-full flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg disabled:opacity-50"
           >
             {loading ? "Connexion en cours..." : "Se connecter"}
           </button>

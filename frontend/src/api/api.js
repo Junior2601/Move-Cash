@@ -8,8 +8,16 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('admin_token');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Vérifier si c'est un agent ou admin
+  const agentToken = localStorage.getItem('agent_token');
+  const adminToken = localStorage.getItem('admin_token');
+  
+  if (agentToken) {
+    config.headers.Authorization = `Bearer ${agentToken}`;
+  } else if (adminToken) {
+    config.headers.Authorization = `Bearer ${adminToken}`;
+  }
+  
   return config;
 });
 

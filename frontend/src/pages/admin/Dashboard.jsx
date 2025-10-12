@@ -82,7 +82,7 @@ export default function Dashboard() {
       };
 
       // Récupérer les statistiques générales
-      const statsRes = await api.get('/transactions/stats', config);
+      const statsRes = await api.get('/transactions/admin/stats', config);
       const statsData = statsRes.data.data;
       
       setStats({
@@ -94,7 +94,7 @@ export default function Dashboard() {
       
       // Récupérer les données du graphique
       try {
-        const chartRes = await api.get(`/transactions/chart-data?period=${timeFilter}`, config);
+        const chartRes = await api.get(`/statistic/transactions/chart-data?period=${timeFilter}`, config);
         setChartData(chartRes.data.data || getMockChartData(timeFilter));
       } catch {
         setChartData(getMockChartData(timeFilter));
@@ -102,14 +102,14 @@ export default function Dashboard() {
 
       // Récupérer les statistiques par devise
       try {
-        const currencyRes = await api.get('/transactions/currency-stats', config);
+        const currencyRes = await api.get('/statistic/transactions/currency-stats', config);
         setCurrencyData(currencyRes.data.data || getMockCurrencyData());
       } catch {
         setCurrencyData(getMockCurrencyData());
       }
 
       // Récupérer les transactions récentes
-      const txRes = await api.get('/transactions/all-transactions?limit=5', config);
+      const txRes = await api.get('/transactions/admin/all-transactions?limit=5', config);
       const transactionsData = txRes.data.data || [];
       setRecentTransactions(Array.isArray(transactionsData) ? transactionsData : []);
       

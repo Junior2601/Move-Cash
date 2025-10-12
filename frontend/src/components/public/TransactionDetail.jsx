@@ -14,26 +14,24 @@ export default function TransactionDetail() {
   const [copiedField, setCopiedField] = useState('');
   const [isClientSideExpired, setIsClientSideExpired] = useState(false);
 
-  // Fonction pour calculer le temps restant - VERSION CORRIGÉE UTC
+  // Fonction pour calculer le temps restant
   const calculateTimeLeft = (expiresAt) => {
     if (!expiresAt) return 0;
-    
-    // Les dates sont maintenant en UTC depuis le serveur corrigé
     const serverExpiresAt = new Date(expiresAt);
     const now = new Date();
-    
-    // Calculer la différence en secondes (les deux en UTC)
     const diff = Math.max(0, Math.floor((serverExpiresAt - now) / 1000));
-    
-    console.log('⏰ Calcul temps restant UTC:', {
-      expires_at_server: expiresAt,
-      expires_at_local: serverExpiresAt.toLocaleString(),
-      now_local: now.toLocaleString(),
-      diff_seconds: diff,
-      diff_minutes: Math.floor(diff / 60)
-    });
-    
     return diff;
+  };
+
+  // Fonction pour copier le texte
+  const copyToClipboard = async (text, field) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(''), 2000);
+    } catch (err) {
+      console.error('Erreur copie:', err);
+    }
   };
 
   // Charger les détails de la transaction
@@ -43,36 +41,16 @@ export default function TransactionDetail() {
       const response = await api.get(`/transactions/${transactionId}`);
       const transactionData = response.data.data;
       setTransaction(transactionData);
-      
-      console.log('📊 Données transaction reçues:', {
-        id: transactionData.id,
-        status: transactionData.status,
-        expires_at: transactionData.expires_at,
-        client_validated: transactionData.client_validated,
-        now: new Date().toISOString(),
-        expires_at_date: new Date(transactionData.expires_at).toISOString(),
-        is_expired: new Date() > new Date(transactionData.expires_at)
-      });
 
-      // Calculer le temps restant seulement si la transaction est en attente
-      if (transactionData.status === 'en_attente' && transactionData.expires_at) {
+      // Calculer le temps restant seulement si la transaction est en attente et non validée
+      if (transactionData.status === 'en_attente' && transactionData.expires_at && !transactionData.client_validated) {
         const timeLeft = calculateTimeLeft(transactionData.expires_at);
         setTimeLeft(timeLeft);
-        
-        // Mettre à jour l'état d'expiration côté client
         setIsClientSideExpired(timeLeft <= 0);
-        
-        console.log('🕒 Temps restant calculé:', {
-          id: transactionData.id,
-          status: transactionData.status,
-          expires_at: transactionData.expires_at,
-          time_left_seconds: timeLeft,
-          time_left_minutes: Math.floor(timeLeft / 60),
-          is_client_side_expired: timeLeft <= 0
-        });
       } else {
         setTimeLeft(0);
-        setIsClientSideExpired(transactionData.status !== 'en_attente');
+        // Ne pas mettre isClientSideExpired à true si la transaction est validée
+        setIsClientSideExpired(transactionData.status === 'en_attente' && !transactionData.client_validated);
       }
     } catch (err) {
       console.error('Erreur chargement transaction:', err);
@@ -86,10 +64,10 @@ export default function TransactionDetail() {
     fetchTransaction();
   }, [transactionId]);
 
-  // Mettre à jour le compte à rebours seulement pour les transactions en attente
+  // Mettre à jour le compte à rebours seulement pour les transactions en attente non validées
   useEffect(() => {
-    if (timeLeft <= 0 || !transaction || transaction.status !== 'en_attente') {
-      if (timeLeft <= 0 && transaction?.status === 'en_attente') {
+    if (timeLeft <= 0 || !transaction || transaction.status !== 'en_attente' || transaction.client_validated) {
+      if (timeLeft <= 0 && transaction?.status === 'en_attente' && !transaction.client_validated) {
         setIsClientSideExpired(true);
       }
       return;
@@ -100,8 +78,6 @@ export default function TransactionDetail() {
         if (prev <= 1) {
           clearInterval(timer);
           setIsClientSideExpired(true);
-          // Recharger la transaction pour voir le statut "expirée"
-          fetchTransaction();
           return 0;
         }
         return prev - 1;
@@ -111,33 +87,9 @@ export default function TransactionDetail() {
     return () => clearInterval(timer);
   }, [timeLeft, transaction]);
 
-  // Debug effect
-  useEffect(() => {
-    console.log('🔍 DEBUG Transaction State:', {
-      transaction,
-      timeLeft,
-      isPending: transaction?.status === 'en_attente',
-      isClientSideExpired,
-      expiresAt: transaction?.expires_at,
-      now: new Date().toISOString(),
-      expiresAtDate: transaction?.expires_at ? new Date(transaction.expires_at).toISOString() : null
-    });
-  }, [transaction, timeLeft, isClientSideExpired]);
-
-  // Fonction pour copier le texte
-  const copyToClipboard = async (text, field) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(''), 2000);
-    } catch (err) {
-      console.error('Erreur copie:', err);
-    }
-  };
-
   // Valider la transaction (confirmation client)
   const handleValidate = async () => {
-    if (!transaction || transaction.status !== 'en_attente') return;
+    if (!transaction || transaction.status !== 'en_attente' || transaction.client_validated) return;
 
     try {
       setIsValidating(true);
@@ -145,14 +97,19 @@ export default function TransactionDetail() {
       // Appeler l'endpoint de validation client
       await api.post(`/transactions/${transactionId}/client-validate`);
       
-      // Recharger les données pour obtenir le statut mis à jour
-      await fetchTransaction();
+      // Mettre à jour l'état local immédiatement sans recharger
+      setTransaction(prev => ({
+        ...prev,
+        client_validated: true
+      }));
       
       // Arrêter le minuteur
       setTimeLeft(0);
+      // IMPORTANT : Ne pas mettre isClientSideExpired à true
       setIsClientSideExpired(false);
       
-      alert('Transaction validée avec succès !');
+      console.log('✅ Transaction validée - minuteur arrêté');
+      
     } catch (err) {
       console.error('Erreur validation:', err);
       alert(err.response?.data?.message || 'Erreur lors de la validation');
@@ -212,6 +169,9 @@ export default function TransactionDetail() {
   const isPending = transaction.status === 'en_attente';
   const isClientValidated = transaction.client_validated;
 
+  // Déterminer si le minuteur doit être affiché
+  const shouldShowTimer = isPending && !isClientSideExpired && !isClientValidated && timeLeft > 0;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
@@ -250,7 +210,8 @@ export default function TransactionDetail() {
                 </div>
               </div>
 
-              {isPending && !isClientSideExpired && (
+              {/* AFFICHAGE DU MINUTEUR UNIQUEMENT SI NECESSAIRE */}
+              {shouldShowTimer && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
@@ -269,13 +230,11 @@ export default function TransactionDetail() {
                       </p>
                     </div>
                   </div>
-                  <div className="mt-2 text-xs text-yellow-600">
-                    ⏰ Système UTC activé - Expiration dans {formatTime(timeLeft)}
-                  </div>
                 </div>
               )}
 
-              {(isClientSideExpired || isExpired) && (
+              {/* MESSAGE D'EXPIRATION - UNIQUEMENT SI NON VALIDÉ */}
+              {(isClientSideExpired || isExpired) && !isClientValidated && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                   <div className="flex items-center space-x-3">
                     <AlertCircle className="h-6 w-6 text-red-600" />
@@ -371,11 +330,14 @@ export default function TransactionDetail() {
                   <li>• Transférez exactement le montant indiqué</li>
                   <li>• Utilisez uniquement le numéro fourni</li>
                   <li>• Ne partagez pas le code de suivi</li>
-                  {isPending && !isClientSideExpired && (
+                  {shouldShowTimer && (
                     <li>• La transaction expire dans {formatTime(timeLeft)}</li>
                   )}
-                  {(isClientSideExpired || isExpired) && (
+                  {(isClientSideExpired || isExpired) && !isClientValidated && (
                     <li>• La transaction a expiré</li>
+                  )}
+                  {isClientValidated && (
+                    <li>• Transaction validée - en attente du traitement par l'agent</li>
                   )}
                 </ul>
               </div>
@@ -424,8 +386,8 @@ export default function TransactionDetail() {
               </div>
             </div>
 
-            {/* Bouton de validation */}
-            {isPending && !isClientValidated && !isClientSideExpired && (
+            {/* Bouton de validation - UNIQUEMENT SI NON VALIDÉ ET NON EXPIRÉ */}
+            {isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0 && (
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirmation</h3>
                 <p className="text-gray-600 text-sm mb-4">
@@ -434,7 +396,7 @@ export default function TransactionDetail() {
                 
                 <button
                   onClick={handleValidate}
-                  disabled={isValidating || timeLeft <= 0}
+                  disabled={isValidating}
                   className="w-full flex items-center justify-center space-x-2 bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isValidating ? (
@@ -449,22 +411,16 @@ export default function TransactionDetail() {
                     </>
                   )}
                 </button>
-                
-                {timeLeft <= 0 && (
-                  <p className="text-red-600 text-sm mt-2 text-center">
-                    Temps écoulé - transaction expirée
-                  </p>
-                )}
               </div>
             )}
 
-            {/* Statut de validation client */}
+            {/* Statut de validation client - APRES VALIDATION */}
             {isClientValidated && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-6">
                 <div className="text-center">
                   <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold text-green-900 mb-2">
-                    Transaction validée
+                    Paiement confirmé
                   </h3>
                   <p className="text-sm text-green-700">
                     Vous avez confirmé avoir effectué le paiement. L'agent procédera maintenant au versement.
@@ -473,8 +429,8 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {/* Message d'expiration côté client */}
-            {isClientSideExpired && isPending && (
+            {/* Message d'expiration - UNIQUEMENT SI NON VALIDÉ */}
+            {isClientSideExpired && isPending && !isClientValidated && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-6">
                 <div className="text-center">
                   <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-3" />
@@ -489,7 +445,7 @@ export default function TransactionDetail() {
             )}
 
             {/* Statut final */}
-            {(isCompleted || isFailed || isExpired) && (
+            {(isCompleted || isFailed || isExpired) && !isPending && (
               <div className={`rounded-xl p-6 ${
                 isCompleted ? 'bg-green-50 border border-green-200' :
                 isFailed ? 'bg-red-50 border border-red-200' :

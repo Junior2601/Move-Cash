@@ -9,8 +9,12 @@ import {
   findTransactionByTrackingCode,
   redirectTransaction,
   acceptRedirection,
-  rejectRedirection
+  rejectRedirection,
+  findTransactionsByAgent,
+  getAgentStats,
+  getAgentGainsHistory
 } from '../models/transaction.repository.js';
+import { pool } from '../config/db.js';
 
 
 // =========================
@@ -559,6 +563,181 @@ export const getTransactionStatsController = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur lors de la récupération des statistiques'
+    });
+  }
+};
+
+// =========================
+// Obtenir les statistiques d'un agent (pour l'agent lui-même)
+// =========================
+export const getAgentPersonalStatsController = async (req, res) => {
+  try {
+    const agent_id = req.user.id; // L'agent connecté
+    const {
+      start_date,
+      end_date,
+      status
+    } = req.query;
+
+    console.log('📊 Stats personnelles agent:', { agent_id, query: req.query });
+
+    // Valider que l'agent existe et est actif
+    const agentCheck = await pool.query(
+      'SELECT id, name FROM agents WHERE id = $1 AND is_active = true',
+      [agent_id]
+    );
+
+    if (agentCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Agent non trouvé ou inactif'
+      });
+    }
+
+    const stats = await getAgentStats(agent_id, {
+      start_date: start_date || null,
+      end_date: end_date || null,
+      status: status || null
+    });
+
+    res.json({
+      success: true,
+      message: 'Statistiques récupérées avec succès',
+      data: {
+        ...stats,
+        agent_info: {
+          id: agentCheck.rows[0].id,
+          name: agentCheck.rows[0].name
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur stats personnelles agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération des statistiques'
+    });
+  }
+};
+
+// =========================
+// Obtenir l'historique des gains d'un agent
+// =========================
+export const getAgentGainsHistoryController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+    const {
+      page = 1,
+      limit = 10,
+      start_date,
+      end_date
+    } = req.query;
+
+    // Validation des paramètres
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre page doit être un nombre positif'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
+      });
+    }
+
+    const result = await getAgentGainsHistory(agent_id, {
+      page: pageNum,
+      limit: limitNum,
+      start_date: start_date || null,
+      end_date: end_date || null
+    });
+
+    res.json({
+      success: true,
+      message: 'Historique des gains récupéré avec succès',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ Erreur historique gains agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération de l\'historique des gains'
+    });
+  }
+};
+
+// =========================
+// Obtenir le dashboard complet de l'agent
+// =========================
+export const getAgentDashboardController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+
+    console.log('📊 Dashboard agent:', { agent_id });
+
+    // Valider que l'agent existe
+    const agentCheck = await pool.query(
+      'SELECT id, name, email, created_at FROM agents WHERE id = $1 AND is_active = true',
+      [agent_id]
+    );
+
+    if (agentCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Agent non trouvé ou inactif'
+      });
+    }
+
+    // Récupérer les statistiques globales
+    const stats = await getAgentStats(agent_id);
+
+    // Récupérer les transactions récentes (5 dernières)
+    const recentTransactions = await findTransactionsByAgent(agent_id, {
+      page: 1,
+      limit: 5
+    });
+
+    // Récupérer les gains du mois en cours
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const monthlyGains = await getAgentGainsHistory(agent_id, {
+      start_date: `${currentMonth}-01`,
+      end_date: new Date().toISOString().split('T')[0],
+      page: 1,
+      limit: 1000 // Récupérer tout pour calculer le total du mois
+    });
+
+    const monthlyTotal = monthlyGains.summary.total_gains;
+
+    res.json({
+      success: true,
+      message: 'Dashboard agent récupéré avec succès',
+      data: {
+        agent_info: agentCheck.rows[0],
+        stats: stats,
+        recent_transactions: recentTransactions.transactions,
+        monthly_performance: {
+          current_month: currentMonth,
+          total_gains: monthlyTotal,
+          transaction_count: monthlyGains.summary.total_count
+        },
+        quick_stats: {
+          pending_transactions: stats.by_status['en_attente']?.count || 0,
+          completed_today: 0, // À implémenter si nécessaire
+          total_balance: stats.current_balance.reduce((total, balance) => total + parseFloat(balance.balance), 0)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur dashboard agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération du dashboard'
     });
   }
 };
