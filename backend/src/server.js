@@ -3,6 +3,7 @@ import express from 'express';
 import { pool } from './config/db.js';
 import cors from 'cors';
 import morgan from 'morgan';
+import './config/server-config.js';
 import { cleanupService } from './services/cleanup.service.js';
 
 
