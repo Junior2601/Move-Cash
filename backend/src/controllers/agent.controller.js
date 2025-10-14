@@ -439,3 +439,34 @@ export const getAgentsListForAgents = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
+
+export const getAgentsListForRedirection = async (req, res) => {
+  try {
+    const currentAgentId = req.user.id;
+    
+    const agents = await pool.query(`
+      SELECT 
+        a.id,
+        a.name,
+        a.email,
+        c.name as country_name,
+        c.code as country_code
+      FROM agents a
+      LEFT JOIN countries c ON a.country_id = c.id
+      WHERE a.id != $1 
+        AND a.is_active = true
+      ORDER BY a.name
+    `, [currentAgentId]);
+
+    res.json({
+      success: true,
+      data: agents.rows
+    });
+  } catch (err) {
+    console.error('Erreur récupération agents pour redirection:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des agents'
+    });
+  }
+};

@@ -15,7 +15,8 @@ import {
   activateAgentAccount,
   deleteAgentAccount,
   getAgentsByCountryIdController,
-  getAgentsByCountryCodeController
+  getAgentsByCountryCodeController,
+  getAgentsListForRedirection
 } from '../controllers/agent.controller.js';
 
 const router = Router();
@@ -27,7 +28,8 @@ router.post('/login', loginAgent);
 router.get('/profile', verifyAgentToken, getProfile);
 router.put('/profile', verifyAgentToken, updateProfile);
 router.put('/change-password', verifyAgentToken, changePassword);
-router.get('/list', verifyAgentToken, getAgentsListForAgents); // ← Nouvelle route
+router.get('/list', verifyAgentToken, getAgentsListForAgents);
+router.get('/agents/list-for-redirection', verifyAgentToken, getAgentsListForRedirection);
 
 // Routes administrateur
 router.post('/', verifyAdminToken, registerAgent);

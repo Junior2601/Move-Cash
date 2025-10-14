@@ -1,6 +1,6 @@
 // src/pages/agent/MyTransactions.jsx
 import React, { useEffect, useState } from "react";
-import { RefreshCcw, Filter, Search, AlertCircle } from "lucide-react";
+import { RefreshCcw, Filter, Search, AlertCircle, CheckCircle, XCircle, Clock } from "lucide-react";
 import useAgentApi from "../../hooks/useAgentApi";
 import { Link } from "react-router-dom";
 
@@ -9,6 +9,7 @@ export default function MyTransactions() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [redirecting, setRedirecting] = useState(null);
+  const [processing, setProcessing] = useState(null);
   const [error, setError] = useState("");
   const [filters, setFilters] = useState({
     status: "",
@@ -58,17 +59,17 @@ export default function MyTransactions() {
       });
       
       // Récupérer la liste des agents pour la redirection
-      const resAgents = await api.get("/agent/list");
+      const resAgents = await api.get("/agent/agents/list-for-redirection");
       
-      // CORRECTION : Gestion sécurisée des données agents
-      const agentsData = resAgents.data?.data || resAgents.data;
+      // Gestion sécurisée des données agents
+      const agentsData = resAgents.data?.data || resAgents.data?.agents || [];
       setAgents(Array.isArray(agentsData) ? agentsData : []);
 
       // Gestion sécurisée des transactions
       const transactionsData = resTx.data?.data?.transactions || resTx.data?.transactions || resTx.data;
       setTransactions(Array.isArray(transactionsData) ? transactionsData : []);
       
-      // Gérer la pagination selon la structure de la réponse
+      // Gérer la pagination
       const paginationData = resTx.data?.pagination || resTx.data?.data?.pagination;
       if (paginationData) {
         setPagination(prev => ({
@@ -77,7 +78,6 @@ export default function MyTransactions() {
           page
         }));
       } else {
-        // Pagination par défaut si non fournie
         setPagination(prev => ({
           ...prev,
           page,
@@ -101,12 +101,61 @@ export default function MyTransactions() {
     }
   };
 
+  // Fonction pour confirmer les actions critiques
+  const confirmAction = (action, transactionId, transactionCode) => {
+    return window.confirm(`Êtes-vous sûr de vouloir ${action} la transaction ${transactionCode} ?`);
+  };
+
+  // Valider une transaction
+  const handleValidate = async (transactionId) => {
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!confirmAction('valider', transactionId, transaction.tracking_code)) {
+      return;
+    }
+    
+    setProcessing(transactionId);
+    try {
+      await api.put(`/transactions/${transactionId}/validate-agent`);
+      await fetchData(pagination.page);
+    } catch (err) {
+      console.error("Erreur lors de la validation", err);
+      setError("Erreur lors de la validation: " + 
+        (err.response?.data?.message || err.message || "Erreur inconnue"));
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  // Annuler une transaction
+  const handleCancel = async (transactionId) => {
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!confirmAction('annuler', transactionId, transaction.tracking_code)) {
+      return;
+    }
+    
+    setProcessing(transactionId);
+    try {
+      await api.put(`/transactions/${transactionId}/cancel-agent`);
+      await fetchData(pagination.page);
+    } catch (err) {
+      console.error("Erreur lors de l'annulation", err);
+      setError("Erreur lors de l'annulation: " + 
+        (err.response?.data?.message || err.message || "Erreur inconnue"));
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const handleRedirect = async (transactionId, newAgentId) => {
     if (!newAgentId) return;
     
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!confirmAction('rediriger', transactionId, transaction.tracking_code)) {
+      return;
+    }
+    
     setRedirecting(transactionId);
     try {
-      const transaction = transactions.find(t => t.id === transactionId);
       await api.post("/transactions/redirect", {
         transaction_id: transactionId,
         to_agent_id: newAgentId,
@@ -167,20 +216,83 @@ export default function MyTransactions() {
     );
   };
 
-  const formatAmount = (amount, currency) => {
+  // Fonction pour formater le montant avec le bon code de devise
+  const formatAmount = (amount, currencyCode) => {
     if (!amount) return "0.00";
-    return `${parseFloat(amount).toFixed(2)} ${currency || ''}`.trim();
+    const formattedAmount = parseFloat(amount).toFixed(2);
+    return currencyCode ? `${formattedAmount} ${currencyCode}` : formattedAmount;
   };
 
-  const getCurrencyCode = (transaction) => {
-    return transaction.from_currency_code || transaction.origin_currency || 'EUR';
+  // Fonction pour obtenir le code de devise correct
+  const getCurrencyCode = (transaction, type = 'send') => {
+    if (type === 'send') {
+      return transaction.from_currency_code || 'EUR';
+    } else {
+      return transaction.to_currency_code || 'EUR';
+    }
   };
 
-  // CORRECTION : Fonction sécurisée pour filtrer les agents
+  // Fonction pour formater le numéro de téléphone avec l'indicatif du pays
+  const formatPhoneNumber = (transaction) => {
+    const phone = transaction.sender_phone || transaction.customer_phone;
+    const countryPrefix = transaction.from_country_phone_prefix; // Utilisez le phone_prefix du pays
+    
+    if (!phone) return "—";
+    
+    // Si le numéro commence déjà par '+', le retourner tel quel
+    if (phone.startsWith('+')) return phone;
+    
+    // Ajouter l'indicatif si disponible
+    if (countryPrefix) {
+      return `+${countryPrefix} ${phone}`;
+    }
+    
+    return phone;
+  };
+
+  // Fonction pour détecter les transactions urgentes (expirant bientôt)
+  const isUrgent = (transaction) => {
+    if (transaction.status !== 'en_attente' && transaction.status !== 'pending') return false;
+    if (!transaction.expires_at) return false;
+    
+    const expiresAt = new Date(transaction.expires_at);
+    const now = new Date();
+    const hoursLeft = (expiresAt - now) / (1000 * 60 * 60);
+    return hoursLeft < 1 && hoursLeft > 0; // Moins d'1 heure mais pas encore expiré
+  };
+
+  // Fonction pour formater la date
+  const formatDate = (dateString) => {
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   const getFilteredAgents = (transaction) => {
     if (!Array.isArray(agents)) return [];
     return agents.filter(agent => agent.id !== transaction.assigned_agent_id);
   };
+
+  // Vérifier si une transaction peut être validée/annulée
+  const canProcessTransaction = (transaction) => {
+    return transaction.status === 'en_attente' || transaction.status === 'pending';
+  };
+
+  // Refresh automatique des données
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchData(pagination.page);
+      }
+    }, 30000); // Toutes les 30 secondes
+
+    return () => clearInterval(interval);
+  }, [pagination.page]);
 
   useEffect(() => {
     fetchData(1);
@@ -280,6 +392,13 @@ export default function MyTransactions() {
               >
                 Effacer
               </button>
+              <button
+                onClick={() => fetchData(pagination.page)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors flex items-center gap-2"
+              >
+                <RefreshCcw className="w-4 h-4" />
+                Actualiser
+              </button>
             </div>
           </div>
         </div>
@@ -292,13 +411,16 @@ export default function MyTransactions() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Code
+                    Code & Détails
                   </th>
                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Montant
                   </th>
                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Client
+                  </th>
+                  <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
                   </th>
                   <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Statut
@@ -311,26 +433,40 @@ export default function MyTransactions() {
               <tbody className="divide-y divide-gray-200">
                 {transactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
-                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
-                      <code className="font-mono text-sm text-gray-900 bg-gray-100 px-2 py-1 rounded">
-                        {transaction.tracking_code}
-                      </code>
+                    <td className="px-4 sm:px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <code className="font-mono text-sm text-gray-900 bg-gray-100 px-2 py-1 rounded">
+                          {transaction.tracking_code}
+                        </code>
+                        {isUrgent(transaction) && (
+                          <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+                            <Clock className="w-3 h-3" />
+                            Urgent
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {transaction.sender_method_name} → {transaction.receiver_method_name}
+                      </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        {formatAmount(transaction.send_amount, getCurrencyCode(transaction))}
+                        {formatAmount(transaction.send_amount, getCurrencyCode(transaction, 'send'))}
                       </div>
                       <div className="text-sm text-gray-500">
-                        → {formatAmount(transaction.receive_amount, transaction.to_currency_code)}
+                        → {formatAmount(transaction.receive_amount, getCurrencyCode(transaction, 'receive'))}
                       </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4">
-                      <div className="text-sm text-gray-900">
-                        {transaction.sender_phone || transaction.customer_phone || "—"}
+                      <div className="text-sm text-gray-900 font-medium">
+                        {formatPhoneNumber(transaction)}
                       </div>
                       <div className="text-sm text-gray-500">
                         {transaction.customer_name || "Non spécifié"}
                       </div>
+                    </td>
+                    <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(transaction.created_at)}
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(transaction.status)}
@@ -345,8 +481,39 @@ export default function MyTransactions() {
                           Détails
                         </Link>
 
-                        {/* Redirection */}
-                        {(transaction.status === 'en_attente' || transaction.status === 'pending') && (
+                        {/* Boutons Valider/Annuler pour les transactions en attente */}
+                        {canProcessTransaction(transaction) && (
+                          <>
+                            <button
+                              onClick={() => handleValidate(transaction.id)}
+                              disabled={processing === transaction.id}
+                              className="inline-flex items-center px-3 py-1 border border-green-600 text-green-600 rounded-lg hover:bg-green-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {processing === transaction.id ? (
+                                <RefreshCcw className="w-3 h-3 animate-spin mr-1" />
+                              ) : (
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                              )}
+                              Valider
+                            </button>
+
+                            <button
+                              onClick={() => handleCancel(transaction.id)}
+                              disabled={processing === transaction.id}
+                              className="inline-flex items-center px-3 py-1 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {processing === transaction.id ? (
+                                <RefreshCcw className="w-3 h-3 animate-spin mr-1" />
+                              ) : (
+                                <XCircle className="w-3 h-3 mr-1" />
+                              )}
+                              Annuler
+                            </button>
+                          </>
+                        )}
+
+                        {/* Redirection pour les transactions en attente */}
+                        {canProcessTransaction(transaction) && (
                           <div className="relative">
                             <select
                               onChange={(e) => handleRedirect(transaction.id, e.target.value)}
@@ -355,7 +522,6 @@ export default function MyTransactions() {
                               className="appearance-none bg-white border border-gray-300 rounded-lg px-3 py-1 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <option value="">Rediriger...</option>
-                              {/* CORRECTION : Utilisation de la fonction sécurisée */}
                               {getFilteredAgents(transaction).map(agent => (
                                 <option key={agent.id} value={agent.id}>
                                   {agent.name} {agent.email ? `(${agent.email})` : ''}
@@ -382,11 +548,22 @@ export default function MyTransactions() {
                 <div key={transaction.id} className="p-4">
                   <div className="flex justify-between items-start mb-3">
                     <div>
-                      <code className="font-mono text-sm text-gray-900 bg-gray-100 px-2 py-1 rounded mb-1 block">
-                        {transaction.tracking_code}
-                      </code>
-                      <div className="text-sm text-gray-600">
-                        {transaction.sender_phone || transaction.customer_phone || "—"}
+                      <div className="flex items-center gap-2 mb-1">
+                        <code className="font-mono text-sm text-gray-900 bg-gray-100 px-2 py-1 rounded">
+                          {transaction.tracking_code}
+                        </code>
+                        {isUrgent(transaction) && (
+                          <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+                            <Clock className="w-3 h-3" />
+                            Urgent
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600 font-medium">
+                        {formatPhoneNumber(transaction)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {formatDate(transaction.created_at)}
                       </div>
                     </div>
                     {getStatusBadge(transaction.status)}
@@ -396,18 +573,22 @@ export default function MyTransactions() {
                     <div>
                       <div className="text-xs text-gray-500">Montant envoyé</div>
                       <div className="text-sm font-medium">
-                        {formatAmount(transaction.send_amount, getCurrencyCode(transaction))}
+                        {formatAmount(transaction.send_amount, getCurrencyCode(transaction, 'send'))}
                       </div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500">Montant reçu</div>
                       <div className="text-sm font-medium">
-                        {formatAmount(transaction.receive_amount, transaction.to_currency_code)}
+                        {formatAmount(transaction.receive_amount, getCurrencyCode(transaction, 'receive'))}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="text-xs text-gray-500 mb-3">
+                    {transaction.sender_method_name} → {transaction.receiver_method_name}
+                  </div>
+
+                  <div className="flex gap-2 flex-wrap">
                     <Link
                       to={`/agent/transaction/${transaction.id}`}
                       className="flex-1 text-center px-3 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
@@ -415,7 +596,35 @@ export default function MyTransactions() {
                       Détails
                     </Link>
 
-                    {(transaction.status === 'en_attente' || transaction.status === 'pending') && (
+                    {canProcessTransaction(transaction) && (
+                      <>
+                        <button
+                          onClick={() => handleValidate(transaction.id)}
+                          disabled={processing === transaction.id}
+                          className="flex-1 text-center px-3 py-2 border border-green-600 text-green-600 rounded-lg hover:bg-green-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {processing === transaction.id ? (
+                            <RefreshCcw className="w-3 h-3 animate-spin mx-auto" />
+                          ) : (
+                            "Valider"
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => handleCancel(transaction.id)}
+                          disabled={processing === transaction.id}
+                          className="flex-1 text-center px-3 py-2 border border-red-600 text-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {processing === transaction.id ? (
+                            <RefreshCcw className="w-3 h-3 animate-spin mx-auto" />
+                          ) : (
+                            "Annuler"
+                          )}
+                        </button>
+                      </>
+                    )}
+
+                    {canProcessTransaction(transaction) && (
                       <div className="flex-1 relative">
                         <select
                           onChange={(e) => handleRedirect(transaction.id, e.target.value)}
@@ -424,7 +633,6 @@ export default function MyTransactions() {
                           className="w-full appearance-none bg-white border border-gray-300 rounded-lg px-3 py-2 pr-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <option value="">Rediriger...</option>
-                          {/* CORRECTION : Utilisation de la fonction sécurisée */}
                           {getFilteredAgents(transaction).map(agent => (
                             <option key={agent.id} value={agent.id}>
                               {agent.name}

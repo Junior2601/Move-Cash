@@ -1024,13 +1024,20 @@ export const findTransactionsByAgent = async (agent_id, {
       SELECT 
         t.*,
         fc.name as from_country_name,
+        fc.phone_prefix as from_country_phone_prefix,  
+        fc.code as from_country_code,
         tc.name as to_country_name,
+        tc.code as to_country_code,
+        from_curr.code as from_currency_code,          
+        to_curr.code as to_currency_code,              
         sm.method as sender_method_name,
         rm.method as receiver_method_name,
         an.number as authorized_number
       FROM transactions t
       LEFT JOIN countries fc ON t.from_country_id = fc.id
       LEFT JOIN countries tc ON t.to_country_id = tc.id
+      LEFT JOIN currencies from_curr ON fc.currency_id = from_curr.id  
+      LEFT JOIN currencies to_curr ON tc.currency_id = to_curr.id      
       LEFT JOIN payment_methods sm ON t.sender_method_id = sm.id
       LEFT JOIN payment_methods rm ON t.receiver_method_id = rm.id
       LEFT JOIN authorized_numbers an ON t.authorized_number_id = an.id
