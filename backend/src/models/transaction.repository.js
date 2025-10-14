@@ -191,8 +191,8 @@ export const createTransaction = async ({
     const tracking_code = 'TRX' + Date.now().toString().slice(-8) + Math.random().toString(36).substr(2, 5).toUpperCase();
     console.log('📦 Tracking code généré:', tracking_code);
 
-    // 5. Commission fixe (5%)
-    const commission_applied = 5;
+    // 5. Commission fixe (0.5%)
+    const commission_applied = 0.5;
 
     // 6. CORRECTION FUSEAU HORAIRE : Insérer transaction avec UTC
     console.log('💾 Insertion transaction en base (UTC)...');

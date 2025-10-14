@@ -8,12 +8,13 @@ import {
   registerAgent,
   getAgents,
   getAgent,
+  getAgentsListForAgents,
   updateAgentProfile,
   changeAgentPassword,
   deactivateAgentAccount,
   activateAgentAccount,
   deleteAgentAccount,
-  getAgentsByCountryIdController,      // Noms changés ici
+  getAgentsByCountryIdController,     
   getAgentsByCountryCodeController
 } from '../controllers/agent.controller.js';
 
@@ -26,6 +27,7 @@ router.post('/login', loginAgent);
 router.get('/profile', verifyAgentToken, getProfile);
 router.put('/profile', verifyAgentToken, updateProfile);
 router.put('/change-password', verifyAgentToken, changePassword);
+router.get('/list', verifyAgentToken, getAgentsListForAgents);
 
 // Routes administrateur
 router.post('/', verifyAdminToken, registerAgent);
