@@ -7,13 +7,14 @@ import {
   changePassword,
   registerAgent,
   getAgents,
+  getAgentsListForAgents, // ← Nouvelle fonction
   getAgent,
   updateAgentProfile,
   changeAgentPassword,
   deactivateAgentAccount,
   activateAgentAccount,
   deleteAgentAccount,
-  getAgentsByCountryIdController,      // Noms changés ici
+  getAgentsByCountryIdController,
   getAgentsByCountryCodeController
 } from '../controllers/agent.controller.js';
 
@@ -26,10 +27,11 @@ router.post('/login', loginAgent);
 router.get('/profile', verifyAgentToken, getProfile);
 router.put('/profile', verifyAgentToken, updateProfile);
 router.put('/change-password', verifyAgentToken, changePassword);
+router.get('/list', verifyAgentToken, getAgentsListForAgents); // ← Nouvelle route
 
 // Routes administrateur
 router.post('/', verifyAdminToken, registerAgent);
-router.get('/', verifyAdminToken, getAgents);
+router.get('/', verifyAdminToken, getAgents); // Version complète pour admin
 router.get('/:id', verifyAdminToken, getAgent);
 router.put('/:id', verifyAdminToken, updateAgentProfile);
 router.put('/:id/password', verifyAdminToken, changeAgentPassword);

@@ -391,3 +391,51 @@ export const changePassword = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
+
+// Récupérer la liste des agents (version limitée pour les agents)
+export const getAgentsListForAgents = async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search, country_id } = req.query;
+    const offset = (page - 1) * limit;
+
+    let agents;
+    let total;
+
+    if (search) {
+      agents = await searchAgents(search, limit, offset);
+      total = await countAgents();
+    } else if (country_id) {
+      agents = await getAgentsByCountry(country_id, limit, offset);
+      total = await countAgentsByCountry(country_id);
+    } else {
+      agents = await getAllAgents(limit, offset);
+      total = await countAgents();
+    }
+
+    // Filtrer les données sensibles pour les agents
+    const filteredAgents = agents.map(agent => ({
+      id: agent.id,
+      name: agent.name,
+      country_name: agent.country_name,
+      country_code: agent.country_code,
+      is_active: agent.is_active,
+      created_at: agent.created_at
+      // On exclut l'email et autres données sensibles
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      agents: filteredAgents,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalAgents: total,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};

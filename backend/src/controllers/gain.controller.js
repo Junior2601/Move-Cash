@@ -1,4 +1,11 @@
-import { findAllGains, findGainsByAgent, createGain, deleteGain } from '../models/gain.repository.js';
+import { 
+  findAllGains, 
+  findGainsByAgent, 
+  createGain, 
+  deleteGain,
+  findGainsByAgentGroupedByCurrency,
+  findGainsByAgentWithCurrencyDetails
+} from '../models/gain.repository.js';
 
 //  Admin : voir tous les gains
 export const getAllGains = async (req, res) => {
@@ -18,6 +25,34 @@ export const getGainsByAgent = async (req, res) => {
     res.json(gains);
   } catch (error) {
     res.status(500).json({ message: "Erreur lors de la récupération des gains", error: error.message });
+  }
+};
+
+//  Agent : voir ses gains groupés par devise
+export const getGainsByAgentGroupedByCurrency = async (req, res) => {
+  const { agent_id } = req.params;
+  try {
+    const gainsByCurrency = await findGainsByAgentGroupedByCurrency(agent_id);
+    res.json(gainsByCurrency);
+  } catch (error) {
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération des gains par devise", 
+      error: error.message 
+    });
+  }
+};
+
+//  Agent : voir ses gains groupés par devise avec détails
+export const getGainsByAgentWithCurrencyDetails = async (req, res) => {
+  const { agent_id } = req.params;
+  try {
+    const gainsByCurrency = await findGainsByAgentWithCurrencyDetails(agent_id);
+    res.json(gainsByCurrency);
+  } catch (error) {
+    res.status(500).json({ 
+      message: "Erreur lors de la récupération des gains détaillés par devise", 
+      error: error.message 
+    });
   }
 };
 

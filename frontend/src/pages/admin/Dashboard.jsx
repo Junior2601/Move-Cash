@@ -82,7 +82,7 @@ export default function Dashboard() {
       };
 
       // Récupérer les statistiques générales
-      const statsRes = await api.get('/transactions/stats', config);
+      const statsRes = await api.get('/transactions/admin/stats', config);
       const statsData = statsRes.data.data;
       
       setStats({
@@ -109,7 +109,7 @@ export default function Dashboard() {
       }
 
       // Récupérer les transactions récentes
-      const txRes = await api.get('/transactions/all-transactions?limit=5', config);
+      const txRes = await api.get('/transactions/admin/all-transactions?limit=5', config);
       const transactionsData = txRes.data.data || [];
       setRecentTransactions(Array.isArray(transactionsData) ? transactionsData : []);
       

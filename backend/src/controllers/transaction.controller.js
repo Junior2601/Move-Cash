@@ -1,3 +1,4 @@
+// controllers/transaction.controller.js
 import { 
   createTransaction,
   findAllTransactions,
@@ -9,13 +10,252 @@ import {
   findTransactionByTrackingCode,
   redirectTransaction,
   acceptRedirection,
-  rejectRedirection
+  rejectRedirection,
+  findTransactionsByAgent,
+  getAgentStats,
+  getAgentGainsHistory
 } from '../models/transaction.repository.js';
-
+import { pool } from '../config/db.js';
 
 // =========================
-// Créer une transaction (Client)
+// Dashboard agent
 // =========================
+export const getAgentDashboardController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+
+    console.log('📊 Dashboard agent:', { agent_id });
+
+    // Valider que l'agent existe
+    const agentCheck = await pool.query(
+      'SELECT id, name, email, created_at FROM agents WHERE id = $1 AND is_active = true',
+      [agent_id]
+    );
+
+    if (agentCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Agent non trouvé ou inactif'
+      });
+    }
+
+    // Récupérer les statistiques globales
+    const stats = await getAgentStats(agent_id);
+
+    // Récupérer les transactions récentes (5 dernières)
+    const recentTransactions = await findTransactionsByAgent(agent_id, {
+      page: 1,
+      limit: 5
+    });
+
+    // Calculer les statistiques pour le dashboard
+    const pendingCount = stats.by_status['en_attente']?.count || 0;
+    const completedCount = stats.by_status['effectuee']?.count || 0;
+    const failedCount = (stats.by_status['echouee']?.count || 0) + (stats.by_status['expiree']?.count || 0);
+    
+    // Récupérer les soldes par devise
+    const balancesByCurrency = stats.current_balance || [];
+    const totalBalance = balancesByCurrency.reduce((total, balance) => {
+      return total + parseFloat(balance.balance || 0);
+    }, 0);
+
+    // Gains du mois en cours
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const startOfMonth = `${currentMonth}-01`;
+    const today = new Date().toISOString().split('T')[0];
+    
+    const monthlyGains = await getAgentGainsHistory(agent_id, {
+      start_date: startOfMonth,
+      end_date: today,
+      page: 1,
+      limit: 1000
+    });
+
+    const monthlyEarnings = monthlyGains.summary.total_gains;
+    const monthlyTransactionCount = monthlyGains.summary.total_count;
+
+    res.json({
+      success: true,
+      message: 'Dashboard agent récupéré avec succès',
+      data: {
+        balance: totalBalance,
+        pending: pendingCount,
+        completed: completedCount,
+        failed: failedCount,
+        monthly_earnings: monthlyEarnings,
+        monthly_transactions: monthlyTransactionCount,
+        recent_transactions: recentTransactions.transactions,
+        balances_by_currency: balancesByCurrency, // Ajout des soldes par devise
+        agent_info: agentCheck.rows[0]
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur dashboard agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération du dashboard'
+    });
+  }
+};
+
+// =========================
+// Statistiques personnelles agent
+// =========================
+export const getAgentPersonalStatsController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+    const { start_date, end_date, status } = req.query;
+
+    console.log('📊 Stats personnelles agent:', { agent_id, query: req.query });
+
+    const agentCheck = await pool.query(
+      'SELECT id, name FROM agents WHERE id = $1 AND is_active = true',
+      [agent_id]
+    );
+
+    if (agentCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Agent non trouvé ou inactif'
+      });
+    }
+
+    const stats = await getAgentStats(agent_id, {
+      start_date: start_date || null,
+      end_date: end_date || null,
+      status: status || null
+    });
+
+    res.json({
+      success: true,
+      message: 'Statistiques récupérées avec succès',
+      data: {
+        ...stats,
+        agent_info: {
+          id: agentCheck.rows[0].id,
+          name: agentCheck.rows[0].name
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur stats personnelles agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération des statistiques'
+    });
+  }
+};
+
+// =========================
+// Transactions de l'agent
+// =========================
+export const getAgentTransactionsController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      start_date,
+      end_date
+    } = req.query;
+
+    // Validation des paramètres
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre page doit être un nombre positif'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
+      });
+    }
+
+    const result = await findTransactionsByAgent(agent_id, {
+      page: pageNum,
+      limit: limitNum,
+      status,
+      start_date,
+      end_date
+    });
+
+    res.json({
+      success: true,
+      message: 'Transactions récupérées avec succès',
+      data: {
+        transactions: result.transactions,
+        pagination: result.pagination
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erreur transactions agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération des transactions'
+    });
+  }
+};
+
+// =========================
+// Historique des gains agent
+// =========================
+export const getAgentGainsHistoryController = async (req, res) => {
+  try {
+    const agent_id = req.user.id;
+    const {
+      page = 1,
+      limit = 10,
+      start_date,
+      end_date
+    } = req.query;
+
+    // Validation des paramètres
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+
+    if (isNaN(pageNum) || pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre page doit être un nombre positif'
+      });
+    }
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
+      });
+    }
+
+    const result = await getAgentGainsHistory(agent_id, {
+      page: pageNum,
+      limit: limitNum,
+      start_date: start_date || null,
+      end_date: end_date || null
+    });
+
+    res.json({
+      success: true,
+      message: 'Historique des gains récupéré avec succès',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ Erreur historique gains agent:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Erreur lors de la récupération de l\'historique des gains'
+    });
+  }
+};
+
+// Les autres fonctions contrôleur restent inchangées...
 export const createTransactionController = async (req, res) => {
   try {
     const {
@@ -28,7 +268,6 @@ export const createTransactionController = async (req, res) => {
       send_amount
     } = req.body;
 
-    // Validation des données requises
     if (!from_country_id || !to_country_id || !sender_phone || !receiver_phone || 
         !sender_method_id || !receiver_method_id || !send_amount) {
       return res.status(400).json({
@@ -68,9 +307,7 @@ export const createTransactionController = async (req, res) => {
   }
 };
 
-// =========================
-// Valider une transaction (client)
-// =========================
+// ... (les autres fonctions contrôleur restent identiques)
 export const clientValidateTransactionController = async (req, res) => {
   try {
     const result = await clientValidateTransaction(req.params.id);
@@ -80,13 +317,10 @@ export const clientValidateTransactionController = async (req, res) => {
   }
 };
 
-// =========================
-// Valider une transaction (Admin/Agent)
-// =========================
 export const validateTransactionController = async (req, res) => {
   try {
     const { transaction_id } = req.params;
-    const actor = req.user; // Supposant que l'utilisateur est authentifié
+    const actor = req.user;
 
     if (!transaction_id) {
       return res.status(400).json({
@@ -126,9 +360,6 @@ export const validateTransactionController = async (req, res) => {
   }
 };
 
-// =========================
-// Annuler une transaction (Admin/Agent)
-// =========================
 export const cancelTransactionController = async (req, res) => {
   try {
     const { transaction_id } = req.params;
@@ -165,9 +396,6 @@ export const cancelTransactionController = async (req, res) => {
   }
 };
 
-// =========================
-// Récupérer une transaction par ID
-// =========================
 export const getTransactionByIdController = async (req, res) => {
   try {
     const { transaction_id } = req.params;
@@ -201,9 +429,6 @@ export const getTransactionByIdController = async (req, res) => {
   }
 };
 
-// =========================
-// Récupérer une transaction par tracking code
-// =========================
 export const getTransactionByTrackingCodeController = async (req, res) => {
   try {
     const { tracking_code } = req.params;
@@ -237,9 +462,6 @@ export const getTransactionByTrackingCodeController = async (req, res) => {
   }
 };
 
-// =========================
-// Rediriger une transaction (Agent)
-// =========================
 export const redirectTransactionController = async (req, res) => {
   try {
     const {
@@ -251,7 +473,6 @@ export const redirectTransactionController = async (req, res) => {
 
     const actor = req.user;
 
-    // Validation des données requises
     if (!transaction_id || !to_agent_id || !redirected_amount) {
       return res.status(400).json({
         success: false,
@@ -268,7 +489,7 @@ export const redirectTransactionController = async (req, res) => {
 
     const redirection = await redirectTransaction({
       transaction_id,
-      from_agent_id: actor.id, // L'agent connecté est celui qui redirige
+      from_agent_id: actor.id,
       to_agent_id,
       redirected_amount,
       reason,
@@ -299,9 +520,6 @@ export const redirectTransactionController = async (req, res) => {
   }
 };
 
-// =========================
-// Accepter une redirection (Agent)
-// =========================
 export const acceptRedirectionController = async (req, res) => {
   try {
     const { redirection_id } = req.params;
@@ -340,9 +558,6 @@ export const acceptRedirectionController = async (req, res) => {
   }
 };
 
-// =========================
-// Rejeter une redirection (Agent)
-// =========================
 export const rejectRedirectionController = async (req, res) => {
   try {
     const { redirection_id } = req.params;
@@ -379,14 +594,10 @@ export const rejectRedirectionController = async (req, res) => {
   }
 };
 
-// =========================
-// Lister toutes les transactions (Admin)
-// =========================
 export const getAllTransactionsController = async (req, res) => {
   try {
     console.log('📋 Query params received:', req.query);
 
-    // Extraction et validation des paramètres
     const {
       page = 1,
       limit = 10,
@@ -398,7 +609,6 @@ export const getAllTransactionsController = async (req, res) => {
       end_date
     } = req.query;
 
-    // Validation des paramètres numériques
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
 
@@ -416,7 +626,6 @@ export const getAllTransactionsController = async (req, res) => {
       });
     }
 
-    // Validation du statut
     const validStatuses = ['en_attente', 'effectuee', 'echouee', 'expiree'];
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({
@@ -425,7 +634,6 @@ export const getAllTransactionsController = async (req, res) => {
       });
     }
 
-    // Appeler la fonction du repository
     const result = await findAllTransactions({
       page: pageNum,
       limit: limitNum,
@@ -437,7 +645,6 @@ export const getAllTransactionsController = async (req, res) => {
       end_date: end_date || null
     });
 
-    // Réponse réussie
     res.json({
       success: true,
       message: 'Transactions récupérées avec succès',
@@ -448,7 +655,6 @@ export const getAllTransactionsController = async (req, res) => {
   } catch (error) {
     console.error('❌ Error in getAllTransactionsController:', error);
     
-    // Gérer les erreurs spécifiques
     if (error.message.includes('invalid input syntax')) {
       return res.status(400).json({
         success: false,
@@ -456,7 +662,6 @@ export const getAllTransactionsController = async (req, res) => {
       });
     }
 
-    // Erreur générale
     res.status(500).json({
       success: false,
       message: 'Erreur interne du serveur lors de la récupération des transactions',
@@ -465,73 +670,6 @@ export const getAllTransactionsController = async (req, res) => {
   }
 };
 
-
-// =========================
-// Obtenir les transactions d'un agent
-// =========================
-export const getAgentTransactionsController = async (req, res) => {
-  try {
-    const { agent_id } = req.params;
-    const {
-      page = 1,
-      limit = 10,
-      status,
-      start_date,
-      end_date
-    } = req.query;
-
-    // Valider l'ID de l'agent
-    const agentIdNum = parseInt(agent_id);
-    if (isNaN(agentIdNum)) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID d\'agent invalide'
-      });
-    }
-
-    // Convertir les paramètres numériques
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    
-    if (isNaN(pageNum) || pageNum < 1) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le paramètre page doit être un nombre positif'
-      });
-    }
-
-    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le paramètre limit doit être un nombre entre 1 et 100'
-      });
-    }
-
-    const result = await findTransactionsByAgent(agentIdNum, {
-      page: pageNum,
-      limit: limitNum,
-      status,
-      start_date,
-      end_date
-    });
-
-    res.json({
-      success: true,
-      data: result.transactions,
-      pagination: result.pagination
-    });
-  } catch (error) {
-    console.error('Erreur transactions agent:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la récupération des transactions de l\'agent'
-    });
-  }
-};
-
-// =========================
-// Obtenir les statistiques des transactions (Admin)
-// =========================
 export const getTransactionStatsController = async (req, res) => {
   try {
     const {
