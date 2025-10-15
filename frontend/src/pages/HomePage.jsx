@@ -5,11 +5,11 @@ import ServiceClient from '../components/public/ServiceClient';
 import ConversionCalculator from '../components/public/ConversionCalculator';
 import { Send, Search, HeadphonesIcon, Calculator, ChevronLeft, ChevronRight } from 'lucide-react';
 import heroImage from '../assets/fond.png';
+import votreLogo from '../assets/logo.png';
 
 export default function HomePage() {
   const [activeSection, setActiveSection] = useState('transaction');
   const [isLoading, setIsLoading] = useState(true);
-  const [progress, setProgress] = useState(0);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   // Données du carousel
@@ -35,24 +35,12 @@ export default function HomePage() {
   ];
 
   useEffect(() => {
-    // Animation de la barre de progression
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          return 100;
-        }
-        return prev + 2;
-      });
-    }, 40);
-
     // Timer pour masquer le loader
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 2000);
 
     return () => {
-      clearInterval(progressInterval);
       clearTimeout(timer);
     };
   }, []);
@@ -135,17 +123,38 @@ export default function HomePage() {
       : `${colorMap[color].inactive} hover:shadow-md`;
   };
 
-  // Loader esthétique
+  // Loader avec cercle pointillé
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 flex items-center justify-center">
         <div className="text-center">
-          {/* Logo animé */}
+          {/* Logo avec animation de pulsation */}
           <div className="relative mb-8">
-            <div className="w-20 h-20 bg-white rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-2xl animate-pulse">
-              <Send className="h-10 w-10 text-blue-600" />
+            <div className="w-32 h-32 mx-auto mb-6 flex items-center justify-center">
+              {/* Remplacez cette image par votre logo */}
+              <img 
+                src={votreLogo} 
+                alt="MoveCash Logo" 
+                className="w-20 h-20 animate-pulse"
+                onError={(e) => {
+                  // Fallback si l'image ne charge pas
+                  e.target.style.display = 'none';
+                  const fallback = document.createElement('div');
+                  fallback.className = 'w-20 h-20 bg-white rounded-2xl flex items-center justify-center';
+                  fallback.innerHTML = '<span class="text-blue-600 font-bold text-lg">MC</span>';
+                  e.target.parentNode.appendChild(fallback);
+                }}
+              />
             </div>
-            <div className="absolute inset-0 rounded-2xl border-2 border-white border-opacity-30 animate-ping"></div>
+            
+            {/* Cercle pointillé animé */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative w-40 h-40">
+                <div className="absolute inset-0 border-4 border-dotted border-white border-opacity-30 rounded-full animate-spin-slow"></div>
+                <div className="absolute inset-2 border-4 border-dotted border-yellow-300 border-opacity-70 rounded-full animate-spin-slow-reverse"></div>
+                <div className="absolute inset-4 border-4 border-dotted border-white border-opacity-50 rounded-full animate-spin-medium"></div>
+              </div>
+            </div>
           </div>
           
           {/* Texte MoveCash */}
@@ -154,48 +163,50 @@ export default function HomePage() {
               Move<span className="text-yellow-300">Cash</span>
             </h1>
             
-            {/* Barre de progression animée */}
-            <div className="w-80 max-w-full mx-auto">
-              <div className="flex justify-between text-sm text-blue-100 mb-2">
-                <span>Chargement...</span>
-                <span>{progress}%</span>
-              </div>
-              
-              {/* Conteneur de la barre */}
-              <div className="w-full h-3 bg-white bg-opacity-20 rounded-full overflow-hidden shadow-inner">
-                {/* Barre de progression animée */}
-                <div 
-                  className="h-full bg-gradient-to-r from-yellow-300 to-yellow-400 rounded-full transition-all duration-300 ease-out relative"
-                  style={{ width: `${progress}%` }}
-                >
-                  {/* Effet de brillance */}
-                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-transparent via-white via-10% to-transparent opacity-30 animate-shine"></div>
-                </div>
-              </div>
-            </div>
-
             {/* Message de statut */}
             <div className="text-blue-100 text-sm space-y-1">
               <p className="animate-pulse">Initialisation des services...</p>
               <p className="text-xs text-blue-200 opacity-80">
-                Move Cash
+                Transferts rapides et sécurisés
               </p>
             </div>
           </div>
         </div>
 
-        {/* Styles pour l'animation de brillance */}
+        {/* Styles pour les animations du loader */}
         <style jsx>{`
-          @keyframes shine {
+          @keyframes spin-slow {
             0% {
-              transform: translateX(-100%);
+              transform: rotate(0deg);
             }
             100% {
-              transform: translateX(100%);
+              transform: rotate(360deg);
             }
           }
-          .animate-shine {
-            animation: shine 1.5s ease-in-out infinite;
+          @keyframes spin-slow-reverse {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(-360deg);
+            }
+          }
+          @keyframes spin-medium {
+            0% {
+              transform: rotate(0deg);
+            }
+            100% {
+              transform: rotate(180deg);
+            }
+          }
+          .animate-spin-slow {
+            animation: spin-slow 3s linear infinite;
+          }
+          .animate-spin-slow-reverse {
+            animation: spin-slow-reverse 4s linear infinite;
+          }
+          .animate-spin-medium {
+            animation: spin-medium 2s linear infinite;
           }
         `}</style>
       </div>
@@ -353,12 +364,6 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
           <div className="xl:grid xl:grid-cols-3 xl:gap-8">
             <div className="space-y-8 xl:col-span-1">
-              {/* <div className="flex items-center space-x-3">
-                <div className="bg-blue-600 p-2 rounded-lg">
-                  <Send className="h-6 w-6 text-white" />
-                </div>
-                <span className="text-white text-xl font-bold">MoveCash</span>
-              </div> */}
               <p className="text-gray-400 text-base">
                 La plateforme de confiance pour vos transferts d'argent dans le monde.
               </p>
@@ -421,11 +426,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-          {/* <div className="mt-12 border-t border-gray-700 pt-8">
-            <p className="text-base text-gray-400 xl:text-center">
-              © {new Date().getFullYear()} MoveCash. Tous droits réservés.
-            </p>
-          </div> */}
         </div>
       </footer>
 

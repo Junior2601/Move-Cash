@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../api/api';
 import { 
@@ -22,8 +22,51 @@ import {
   Key,
   Phone,
   MapPin,
-  Calendar
+  Calendar,
+  CheckCircle,
+  XCircle,
+  Info
 } from 'lucide-react';
+
+// Composant de notification
+const Notification = ({ message, type, onClose }) => {
+  const icons = {
+    success: <CheckCircle className="w-5 h-5" />,
+    error: <XCircle className="w-5 h-5" />,
+    info: <Info className="w-5 h-5" />
+  };
+
+  const styles = {
+    success: 'bg-green-50 border-green-200 text-green-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
+    info: 'bg-blue-50 border-blue-200 text-blue-800'
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 max-w-[90vw] ${styles[type]}`}>
+      <div className="flex-shrink-0">
+        {icons[type]}
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium">{message}</p>
+      </div>
+      <button
+        onClick={onClose}
+        className="flex-shrink-0 hover:opacity-70 transition-opacity"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 export default function AgentsList() {
   const [agents, setAgents] = useState([]);
@@ -41,6 +84,13 @@ export default function AgentsList() {
   const [sortDirection, setSortDirection] = useState('asc');
   const [showPassword, setShowPassword] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [notification, setNotification] = useState(null);
+
+  // Fonction pour afficher une notification - STABILISÉE
+  const showNotification = useCallback((message, type = 'info') => {
+    console.log(`🔔 Notification ${type}:`, message);
+    setNotification({ message, type });
+  }, []);
 
   // Détection de la taille d'écran
   useEffect(() => {
@@ -77,6 +127,7 @@ export default function AgentsList() {
     } catch (err) {
       console.error('API Error:', err);
       setAgents([]);
+      showNotification('Erreur lors du chargement des agents', 'error');
     } finally {
       setLoading(false);
     }
@@ -105,6 +156,7 @@ export default function AgentsList() {
         { id: 4, name: 'Canada' },
         { id: 5, name: 'Luxembourg' }
       ]);
+      showNotification('Erreur lors du chargement des pays', 'error');
     }
   };
 
@@ -117,32 +169,33 @@ export default function AgentsList() {
     e.preventDefault();
     try {
       if (!modal.agent.name || !modal.agent.email || !modal.agent.country_id) {
-        alert("Veuillez remplir tous les champs obligatoires.");
+        showNotification("Veuillez remplir tous les champs obligatoires.", 'error');
         return;
       }
 
       if (modal.mode === "add" && !modal.agent.password) {
-        alert("Veuillez saisir un mot de passe.");
+        showNotification("Veuillez saisir un mot de passe.", 'error');
         return;
       }
 
       if (modal.mode === "add") {
         await api.post('/agent', modal.agent);
+        showNotification('Agent créé avec succès', 'success');
       } else {
         const agentData = { ...modal.agent };
         if (!agentData.password) {
           delete agentData.password;
         }
         await api.put(`/agent/${modal.agent.id}`, agentData);
+        showNotification('Agent modifié avec succès', 'success');
       }
       setModal(null);
       setShowPassword(false);
       fetchAgents();
     } catch (err) {
       console.error(err);
-      if (err.response?.status === 500) {
-        alert("Erreur serveur. Veuillez vérifier les données saisies.");
-      }
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la sauvegarde de l\'agent';
+      showNotification(errorMessage, 'error');
     }
   };
 
@@ -150,9 +203,31 @@ export default function AgentsList() {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer cet agent ?")) return;
     try {
       await api.delete(`/agent/${id}`);
+      showNotification('Agent supprimé avec succès', 'success');
       fetchAgents();
     } catch (err) {
       console.error(err);
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la suppression de l\'agent';
+      showNotification(errorMessage, 'error');
+    }
+  };
+
+  const toggleAgentStatus = async (agent) => {
+    try {
+      const newStatus = !(agent.is_active || agent.status === 'active');
+      await api.patch(`/agent/${agent.id}/toggle-status`, {
+        is_active: newStatus
+      });
+      
+      showNotification(
+        `Agent ${newStatus ? 'activé' : 'désactivé'} avec succès`,
+        'success'
+      );
+      fetchAgents();
+    } catch (err) {
+      console.error(err);
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la modification du statut';
+      showNotification(errorMessage, 'error');
     }
   };
 
@@ -319,6 +394,17 @@ export default function AgentsList() {
 
   return (
     <div className="p-4 lg:p-6 bg-gray-50 min-h-screen">
+      {/* Notification - Position optimisée pour mobile */}
+      {notification && (
+        <div className="fixed inset-x-0 top-4 z-50 px-4">
+          <Notification
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        </div>
+      )}
+
       {/* En-tête avec titre et bouton */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -408,7 +494,10 @@ export default function AgentsList() {
                 </select>
               </div>
 
-              <button className="flex items-center justify-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm lg:text-base">
+              <button 
+                onClick={() => showNotification('Fonctionnalité d\'export à venir', 'info')}
+                className="flex items-center justify-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm lg:text-base"
+              >
                 <Download size={16} />
                 <span className="hidden sm:inline">Exporter</span>
               </button>
@@ -453,6 +542,17 @@ export default function AgentsList() {
                     </div>
                     
                     <div className="flex justify-end space-x-2 mt-3 pt-3 border-t border-gray-100">
+                      <button
+                        onClick={() => toggleAgentStatus(agent)}
+                        className={`p-1 rounded transition-colors ${
+                          agent.is_active || agent.status === 'active'
+                            ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                            : 'text-green-600 hover:text-green-900 hover:bg-green-50'
+                        }`}
+                        title={agent.is_active || agent.status === 'active' ? 'Désactiver' : 'Activer'}
+                      >
+                        {agent.is_active || agent.status === 'active' ? <UserX size={16} /> : <UserCheck size={16} />}
+                      </button>
                       <Link
                         to={`/admin/agents/${agent.id}`}
                         className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"
@@ -574,6 +674,17 @@ export default function AgentsList() {
                         </td>
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex space-x-2">
+                            <button
+                              onClick={() => toggleAgentStatus(agent)}
+                              className={`p-1 rounded transition-colors ${
+                                agent.is_active || agent.status === 'active'
+                                  ? 'text-orange-600 hover:text-orange-900 hover:bg-orange-50'
+                                  : 'text-green-600 hover:text-green-900 hover:bg-green-50'
+                              }`}
+                              title={agent.is_active || agent.status === 'active' ? 'Désactiver' : 'Activer'}
+                            >
+                              {agent.is_active || agent.status === 'active' ? <UserX size={16} /> : <UserCheck size={16} />}
+                            </button>
                             <Link
                               to={`/admin/agents/${agent.id}`}
                               className="text-indigo-600 hover:text-indigo-900 p-1 rounded hover:bg-indigo-50 transition-colors"

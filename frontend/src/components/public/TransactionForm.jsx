@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/api';
 import { Send, ArrowRight, Check, AlertCircle, RefreshCw } from 'lucide-react';
+import { 
+  validatePhoneNumber, 
+  getPhoneFormatExamples,
+  formatPhoneWithPrefix 
+} from '../../utils/phoneValidator';
 
 export default function TransactionForm({ onTransactionComplete }) {
   const [formData, setFormData] = useState({
@@ -22,6 +27,12 @@ export default function TransactionForm({ onTransactionComplete }) {
   const [paymentMethods, setPaymentMethods] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  
+  // États pour la validation en temps réel
+  const [phoneValidation, setPhoneValidation] = useState({
+    sender: { isValid: false, message: '', examples: [], touched: false },
+    receiver: { isValid: false, message: '', examples: [], touched: false }
+  });
 
   const navigate = useNavigate();
 
@@ -33,7 +44,6 @@ export default function TransactionForm({ onTransactionComplete }) {
       
       console.log('🔄 Chargement des pays...');
       
-      // Essayer d'abord l'endpoint /countries (plus stable)
       let countriesResponse;
       try {
         countriesResponse = await api.get('/country');
@@ -60,7 +70,6 @@ export default function TransactionForm({ onTransactionComplete }) {
       const methodsByCountry = {};
       const countryIds = countriesResponse.data.map(country => country.id);
       
-      // Charger en parallèle avec timeout réduit
       const paymentMethodPromises = countryIds.map(async (countryId) => {
         try {
           const methodsResponse = await api.get(`/payment_method/country/${countryId}`, {
@@ -90,6 +99,52 @@ export default function TransactionForm({ onTransactionComplete }) {
     fetchData();
   }, []);
 
+  // Valider le numéro d'envoi quand le pays ou le numéro change
+  useEffect(() => {
+    if (formData.senderCountryId && formData.senderPhone) {
+      const senderCountry = getCountryById(formData.senderCountryId);
+      if (senderCountry && senderCountry.phone_prefix) {
+        const validation = validatePhoneNumber(
+          formData.senderPhone, 
+          null, 
+          senderCountry.phone_prefix
+        );
+        setPhoneValidation(prev => ({
+          ...prev,
+          sender: { ...validation, touched: true }
+        }));
+      }
+    } else {
+      setPhoneValidation(prev => ({
+        ...prev,
+        sender: { isValid: false, message: '', examples: [], touched: !!formData.senderPhone }
+      }));
+    }
+  }, [formData.senderPhone, formData.senderCountryId]);
+
+  // Valider le numéro de réception quand le pays ou le numéro change
+  useEffect(() => {
+    if (formData.receiverCountryId && formData.receiverPhone) {
+      const receiverCountry = getCountryById(formData.receiverCountryId);
+      if (receiverCountry && receiverCountry.phone_prefix) {
+        const validation = validatePhoneNumber(
+          formData.receiverPhone, 
+          null, 
+          receiverCountry.phone_prefix
+        );
+        setPhoneValidation(prev => ({
+          ...prev,
+          receiver: { ...validation, touched: true }
+        }));
+      }
+    } else {
+      setPhoneValidation(prev => ({
+        ...prev,
+        receiver: { isValid: false, message: '', examples: [], touched: !!formData.receiverPhone }
+      }));
+    }
+  }, [formData.receiverPhone, formData.receiverCountryId]);
+
   // Recharger les données
   const handleRetry = () => {
     fetchData();
@@ -109,7 +164,7 @@ export default function TransactionForm({ onTransactionComplete }) {
   const senderPaymentMethods = getPaymentMethodsByCountryId(formData.senderCountryId);
   const receiverPaymentMethods = getPaymentMethodsByCountryId(formData.receiverCountryId);
 
-  // Calculer le taux de change - VERSION SIMPLIFIÉE ET ROBUSTE
+  // Calculer le taux de change
   useEffect(() => {
     if (formData.sentAmount && formData.sentAmount > 0 && formData.senderCountryId && formData.receiverCountryId) {
       const calculateExchangeRate = async () => {
@@ -222,11 +277,9 @@ export default function TransactionForm({ onTransactionComplete }) {
   const getDefaultExchangeRate = (fromCountry, toCountry) => {
     if (!fromCountry || !toCountry) return 0.85;
     
-    // Récupérer les codes de devise depuis les pays
     const fromCurrency = fromCountry.currency_code || 'EUR';
     const toCurrency = toCountry.currency_code || 'EUR';
     
-    // Taux fictifs basés sur les paires de devises courantes
     const rateMap = {
       'EUR-USD': 1.08,
       'USD-EUR': 0.93,
@@ -270,6 +323,15 @@ export default function TransactionForm({ onTransactionComplete }) {
       newErrors.receiverCountryId = 'Le pays de réception doit être différent du pays d\'envoi';
     }
 
+    // Validation des numéros de téléphone
+    if (formData.senderPhone && formData.senderCountryId && !phoneValidation.sender.isValid && phoneValidation.sender.touched) {
+      newErrors.senderPhone = phoneValidation.sender.message;
+    }
+
+    if (formData.receiverPhone && formData.receiverCountryId && !phoneValidation.receiver.isValid && phoneValidation.receiver.touched) {
+      newErrors.receiverPhone = phoneValidation.receiver.message;
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -285,11 +347,20 @@ export default function TransactionForm({ onTransactionComplete }) {
     setIsSubmitting(true);
 
     try {
+      // Formater les numéros de téléphone avec les préfixes
+      const formattedSenderPhone = senderCountry ? 
+        formatPhoneWithPrefix(formData.senderPhone, senderCountry) : 
+        formData.senderPhone.trim();
+      
+      const formattedReceiverPhone = receiverCountry ? 
+        formatPhoneWithPrefix(formData.receiverPhone, receiverCountry) : 
+        formData.receiverPhone.trim();
+
       const transactionData = {
         from_country_id: parseInt(formData.senderCountryId),
         to_country_id: parseInt(formData.receiverCountryId),
-        sender_phone: formData.senderPhone.trim(),
-        receiver_phone: formData.receiverPhone.trim(),
+        sender_phone: formattedSenderPhone,
+        receiver_phone: formattedReceiverPhone,
         sender_method_id: parseInt(formData.senderPaymentMethodId),
         receiver_method_id: parseInt(formData.receiverPaymentMethodId),
         send_amount: parseFloat(formData.sentAmount)
@@ -409,6 +480,10 @@ export default function TransactionForm({ onTransactionComplete }) {
     setReceivedAmount(0);
     setExchangeRate(0);
     setErrors({});
+    setPhoneValidation({
+      sender: { isValid: false, message: '', examples: [], touched: false },
+      receiver: { isValid: false, message: '', examples: [], touched: false }
+    });
   };
 
   const formatCurrency = (amount, currencyCode) => {
@@ -424,12 +499,6 @@ export default function TransactionForm({ onTransactionComplete }) {
     } catch (error) {
       return `${amount} ${currencyCode || ''}`;
     }
-  };
-
-  // Fonction pour formater le numéro de téléphone avec le préfixe
-  const formatPhoneNumber = (phone, country) => {
-    if (!country || !country.phone_prefix || !phone) return phone;
-    return `${country.phone_prefix} ${phone}`;
   };
 
   // Écran de chargement
@@ -512,7 +581,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                 <option value="">Sélectionner un pays</option>
                 {countries.map(country => (
                   <option key={country.id} value={country.id}>
-                    {country.name} ({country.currency_code})
+                    {country.name} ({country.currency_code}) - {country.phone_prefix}
                   </option>
                 ))}
               </select>
@@ -533,18 +602,32 @@ export default function TransactionForm({ onTransactionComplete }) {
                   type="tel"
                   value={formData.senderPhone}
                   onChange={(e) => handleInputChange('senderPhone', e.target.value)}
-                  placeholder="123456789"
+                  placeholder={senderCountry ? getPhoneFormatExamples(null, senderCountry.phone_prefix)[0] : "123456789"}
                   className={`w-full pl-20 pr-4 py-3 rounded-lg border transition-colors ${
-                    errors.senderPhone ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-blue-500'
+                    (errors.senderPhone || (phoneValidation.sender.touched && !phoneValidation.sender.isValid)) 
+                      ? 'border-red-300 focus:border-red-500' 
+                      : 'border-gray-300 focus:border-blue-500'
                   } focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20`}
                 />
               </div>
               {errors.senderPhone && (
                 <p className="mt-1 text-sm text-red-600">{errors.senderPhone}</p>
               )}
-              {formData.senderPhone && senderCountry && (
+              {!errors.senderPhone && phoneValidation.sender.touched && !phoneValidation.sender.isValid && (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1" />
+                  {phoneValidation.sender.message}
+                </p>
+              )}
+              {phoneValidation.sender.touched && phoneValidation.sender.isValid && (
+                <p className="mt-1 text-xs text-green-600 flex items-center">
+                  <Check className="h-3 w-3 mr-1" />
+                  Format valide pour {senderCountry?.name}
+                </p>
+              )}
+              {formData.senderCountryId && senderCountry && (
                 <p className="mt-1 text-xs text-gray-500">
-                  Format: {formatPhoneNumber(formData.senderPhone, senderCountry)}
+                  Format: {phoneValidation.sender.examples?.join(', ') || getPhoneFormatExamples(null, senderCountry.phone_prefix).join(', ')}
                 </p>
               )}
             </div>
@@ -640,7 +723,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                   .filter(c => c.id !== parseInt(formData.senderCountryId))
                   .map(country => (
                     <option key={country.id} value={country.id}>
-                      {country.name} ({country.currency_code})
+                      {country.name} ({country.currency_code}) - {country.phone_prefix}
                     </option>
                   ))
                 }
@@ -662,18 +745,32 @@ export default function TransactionForm({ onTransactionComplete }) {
                   type="tel"
                   value={formData.receiverPhone}
                   onChange={(e) => handleInputChange('receiverPhone', e.target.value)}
-                  placeholder="123456789"
+                  placeholder={receiverCountry ? getPhoneFormatExamples(null, receiverCountry.phone_prefix)[0] : "123456789"}
                   className={`w-full pl-20 pr-4 py-3 rounded-lg border transition-colors ${
-                    errors.receiverPhone ? 'border-red-300 focus:border-red-500' : 'border-gray-300 focus:border-blue-500'
+                    (errors.receiverPhone || (phoneValidation.receiver.touched && !phoneValidation.receiver.isValid)) 
+                      ? 'border-red-300 focus:border-red-500' 
+                      : 'border-gray-300 focus:border-blue-500'
                   } focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20`}
                 />
               </div>
               {errors.receiverPhone && (
                 <p className="mt-1 text-sm text-red-600">{errors.receiverPhone}</p>
               )}
-              {formData.receiverPhone && receiverCountry && (
+              {!errors.receiverPhone && phoneValidation.receiver.touched && !phoneValidation.receiver.isValid && (
+                <p className="mt-1 text-sm text-red-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1" />
+                  {phoneValidation.receiver.message}
+                </p>
+              )}
+              {phoneValidation.receiver.touched && phoneValidation.receiver.isValid && (
+                <p className="mt-1 text-xs text-green-600 flex items-center">
+                  <Check className="h-3 w-3 mr-1" />
+                  Format valide pour {receiverCountry?.name}
+                </p>
+              )}
+              {formData.receiverCountryId && receiverCountry && (
                 <p className="mt-1 text-xs text-gray-500">
-                  Format: {formatPhoneNumber(formData.receiverPhone, receiverCountry)}
+                  Format: {phoneValidation.receiver.examples?.join(', ') || getPhoneFormatExamples(null, receiverCountry.phone_prefix).join(', ')}
                 </p>
               )}
             </div>
@@ -782,7 +879,7 @@ export default function TransactionForm({ onTransactionComplete }) {
           
           <button
             type="submit"
-            disabled={isSubmitting || Object.keys(errors).length > 0}
+            disabled={isSubmitting || Object.keys(errors).length > 0 || !phoneValidation.sender.isValid || !phoneValidation.receiver.isValid}
             className="flex-1 flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
           >
             {isSubmitting ? (

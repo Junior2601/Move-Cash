@@ -1,9 +1,49 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Plus, Edit, Trash2, RefreshCw, Globe, Phone, Currency, 
-  TrendingUp, TrendingDown, Search, Filter, X 
+  TrendingUp, TrendingDown, Search, Filter, X, CheckCircle, XCircle, Info
 } from 'lucide-react';
 import api from '../../api/api';
+
+// Composant de notification
+const Notification = ({ message, type, onClose }) => {
+  const icons = {
+    success: <CheckCircle className="w-5 h-5" />,
+    error: <XCircle className="w-5 h-5" />,
+    info: <Info className="w-5 h-5" />
+  };
+
+  const styles = {
+    success: 'bg-green-50 border-green-200 text-green-800',
+    error: 'bg-red-50 border-red-200 text-red-800',
+    info: 'bg-blue-50 border-blue-200 text-blue-800'
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 max-w-[90vw] ${styles[type]}`}>
+      <div className="flex-shrink-0">
+        {icons[type]}
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium">{message}</p>
+      </div>
+      <button
+        onClick={onClose}
+        className="flex-shrink-0 hover:opacity-70 transition-opacity"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 export default function CountriesList() {
   const [countries, setCountries] = useState([]);
@@ -18,6 +58,13 @@ export default function CountriesList() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [notification, setNotification] = useState(null);
+
+  // Fonction pour afficher une notification - STABILISÉE
+  const showNotification = useCallback((message, type = 'info') => {
+    console.log(`🔔 Notification ${type}:`, message);
+    setNotification({ message, type });
+  }, []);
 
   const fetchCountries = async () => {
     console.log('🔄 fetchCountries - Début');
@@ -26,7 +73,6 @@ export default function CountriesList() {
     
     try {
       console.log('📥 Chargement des pays et statistiques...');
-      // D'abord, charger les pays et les stats
       const [countriesRes, statsRes] = await Promise.all([
         api.get('/country'),
         api.get('/country/stats')
@@ -38,7 +84,6 @@ export default function CountriesList() {
       setCountries(countriesRes.data || []);
       setStats(statsRes.data || { total: 0, active: 0, inactive: 0 });
       
-      // Ensuite, charger les devises séparément pour éviter que l'échec d'une requête bloque tout
       try {
         console.log('💰 Chargement des devises...');
         const currenciesRes = await api.get('/currency/active');
@@ -52,6 +97,7 @@ export default function CountriesList() {
     } catch (err) {
       console.error('💥 Erreur lors du chargement des pays:', err);
       setError('Erreur lors du chargement des données');
+      showNotification('Erreur lors du chargement des données', 'error');
     } finally {
       setLoading(false);
       console.log('🔄 fetchCountries - Terminé');
@@ -63,7 +109,6 @@ export default function CountriesList() {
     fetchCountries(); 
   }, []);
 
-  // Filtrer les pays selon la recherche
   const filteredCountries = countries.filter(country =>
     country.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     country.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -77,7 +122,6 @@ export default function CountriesList() {
     console.log('📝 Données modal:', modal);
     
     try {
-      // Préparer les données
       const countryData = {
         name: modal.country.name,
         code: modal.country.code,
@@ -92,11 +136,13 @@ export default function CountriesList() {
         console.log('➕ Mode: Création nouveau pays');
         await api.post('/country', countryData);
         console.log('✅ Pays créé avec succès');
+        showNotification('Pays créé avec succès', 'success');
       } else {
         console.log('✏️ Mode: Modification pays existant');
         console.log(`📝 ID du pays: ${modal.country.id}`);
         await api.put(`/country/${modal.country.id}`, countryData);
         console.log('✅ Pays modifié avec succès');
+        showNotification('Pays modifié avec succès', 'success');
       }
       
       setModal(null);
@@ -111,12 +157,8 @@ export default function CountriesList() {
         data: err.response?.data
       });
       
-      // Afficher un message d'erreur plus précis
-      if (err.response?.data?.message) {
-        alert(`Erreur: ${err.response.data.message}`);
-      } else {
-        alert('Erreur lors de la sauvegarde du pays');
-      }
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la sauvegarde du pays';
+      showNotification(errorMessage, 'error');
     }
   };
 
@@ -133,6 +175,7 @@ export default function CountriesList() {
       console.log('📤 Envoi requête suppression...');
       await api.delete(`/country/${id}`);
       console.log('✅ Pays supprimé avec succès');
+      showNotification('Pays supprimé avec succès', 'success');
       fetchCountries();
     } catch (err) {
       console.error('💥 Erreur deleteCountry:', err);
@@ -141,7 +184,8 @@ export default function CountriesList() {
         message: err.response?.data?.message,
         data: err.response?.data
       });
-      alert('Erreur lors de la suppression du pays');
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la suppression du pays';
+      showNotification(errorMessage, 'error');
     }
   };
 
@@ -162,6 +206,11 @@ export default function CountriesList() {
       });
       
       console.log('✅ Statut modifié avec succès');
+      const newStatus = !country.is_active;
+      showNotification(
+        `Pays ${newStatus ? 'activé' : 'désactivé'} avec succès`,
+        'success'
+      );
       fetchCountries();
       
     } catch (err) {
@@ -171,13 +220,14 @@ export default function CountriesList() {
         message: err.response?.data?.message,
         data: err.response?.data
       });
-      alert('Erreur lors de la modification du statut');
+      const errorMessage = err.response?.data?.message || 'Erreur lors de la modification du statut';
+      showNotification(errorMessage, 'error');
     }
   };
 
-  // Fonction pour réessayer le chargement
   const retryLoad = () => {
     console.log('🔄 Retry load - Rechargement des données');
+    showNotification('Rechargement des données...', 'info');
     fetchCountries();
   };
 
@@ -199,11 +249,23 @@ export default function CountriesList() {
     stats,
     modal: modal ? `${modal.mode} mode` : 'null',
     searchTerm,
-    error
+    error,
+    notification: notification ? notification.type : 'null'
   });
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
+      {/* Notification - Position optimisée pour mobile */}
+      {notification && (
+        <div className="fixed inset-x-0 top-4 z-50 px-4">
+          <Notification
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto">
         {/* En-tête */}
         <div className="mb-6">
@@ -224,7 +286,7 @@ export default function CountriesList() {
           </div>
         )}
 
-        {/* Carte principale */}
+        {/* Le reste du code reste inchangé */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           {/* En-tête de carte avec actions */}
           <div className="px-4 py-3 border-b border-gray-200">
@@ -262,6 +324,7 @@ export default function CountriesList() {
                   <button
                     onClick={() => {
                       console.log('🔄 Actualisation manuelle');
+                      showNotification('Actualisation des données...', 'info');
                       fetchCountries();
                     }}
                     className="p-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
