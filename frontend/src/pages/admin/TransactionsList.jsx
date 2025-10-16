@@ -77,7 +77,7 @@ export default function TransactionsList() {
 
       console.log('📤 Paramètres envoyés au backend:', params);
 
-      const res = await api.get("/transactions/all-transactions", { 
+      const res = await api.get("/transactions/admin/all-transactions", { 
         params,
         headers: {
           Authorization: `Bearer ${token}`

@@ -9,7 +9,7 @@ import api from "../../api/api";
 
 export default function HistoryList() {
   const [history, setHistory] = useState([]);
-  const [allHistory, setAllHistory] = useState([]); // Stocke toutes les données pour le filtrage côté client
+  const [allHistory, setAllHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [rawResponse, setRawResponse] = useState(null);
@@ -78,9 +78,14 @@ export default function HistoryList() {
     return titles[actionType] || actionType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Extraire le sous-titre des métadonnées
+  // Extraire le sous-titre des métadonnées (MAINTENANT AVEC LES NOMS)
   const getSubtitle = (item) => {
     const metadata = item.metadata || {};
+    
+    // Utiliser le nom de l'entité si disponible
+    if (item.entity_name) {
+      return item.entity_name;
+    }
     
     if (metadata.from_currency && metadata.to_currency) {
       return `${metadata.from_currency} → ${metadata.to_currency}`;
@@ -98,16 +103,24 @@ export default function HistoryList() {
     return item.entity_type || "Système";
   };
 
+  // Obtenir le nom complet de l'acteur
+  const getActorDisplayName = (item) => {
+    if (item.actor_name) {
+      return `${item.actor_name} (${item.actor_type})`;
+    }
+    
+    // Fallback si pas de nom disponible
+    if (item.actor_type && item.actor_id) {
+      return `${item.actor_type} #${item.actor_id}`;
+    }
+    
+    return item.actor_type || "Système";
+  };
+
   // Fonction pour formater la date en YYYY-MM-DD
   const formatDateToYMD = (dateString) => {
     const date = new Date(dateString);
     return date.toISOString().split('T')[0];
-  };
-
-  // Fonction pour comparer les dates (ignorer l'heure)
-  const isSameDate = (date1, date2) => {
-    if (!date1 || !date2) return false;
-    return formatDateToYMD(date1) === formatDateToYMD(date2);
   };
 
   // Appliquer les filtres
@@ -197,7 +210,6 @@ export default function HistoryList() {
   const clearFilters = () => {
     setDateFilter("");
     setActionTypeFilter("");
-    // Réappliquer les filtres (qui va tout afficher puisque les filtres sont vides)
     applyFilters();
     setShowFilters(false);
   };
@@ -205,13 +217,15 @@ export default function HistoryList() {
   const exportCSV = () => {
     if (history.length === 0) return;
     
-    const headers = ["ID", "Type d'action", "Type d'acteur", "ID Acteur", "Type d'entité", "ID Entité", "Description", "Date"];
+    const headers = ["ID", "Type d'action", "Acteur", "Type d'acteur", "ID Acteur", "Type d'entité", "Entité", "ID Entité", "Description", "Date"];
     const rows = history.map(h => [
       h.id,
       h.action_type,
+      h.actor_name || 'N/A',
       h.actor_type,
       h.actor_id || 'N/A',
       h.entity_type || 'N/A',
+      h.entity_name || 'N/A',
       h.entity_id || 'N/A',
       h.description,
       new Date(h.created_at).toLocaleString('fr-FR')
@@ -505,7 +519,7 @@ export default function HistoryList() {
 
                             {item.actor_type && (
                               <div className="text-xs text-gray-400 mt-1">
-                                Par: {item.actor_type} {item.actor_id ? `#${item.actor_id}` : ''}
+                                Par: {getActorDisplayName(item)}
                               </div>
                             )}
                           </div>
@@ -569,7 +583,7 @@ export default function HistoryList() {
                               {new Date(item.created_at).toLocaleString('fr-FR')}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                              {item.actor_type} {item.actor_id ? `#${item.actor_id}` : ''}
+                              {getActorDisplayName(item)}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${priority.color}`}>

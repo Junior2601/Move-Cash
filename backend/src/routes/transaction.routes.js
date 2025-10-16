@@ -41,7 +41,7 @@ router.put('/redirections/:redirection_id/accept', verifyAgentToken, acceptRedir
 router.put('/redirections/:redirection_id/reject', verifyAgentToken, rejectRedirectionController);
 
 // ============= ADMIN ROUTES =============
-router.get('/admin/all-transactions', debugDatabase, verifyAdminToken, getAllTransactionsController);
+router.get('/admin/all-transactions', verifyAdminToken, getAllTransactionsController);
 router.get('/admin/stats', verifyAdminToken, getTransactionStatsController);
 router.put('/:transaction_id/validate', verifyAdminToken, validateTransactionController);
 router.put('/:transaction_id/cancel', verifyAdminToken, cancelTransactionController);

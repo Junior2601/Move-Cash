@@ -59,6 +59,7 @@ export default function CountriesList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Fonction pour afficher une notification - STABILISÉE
   const showNotification = useCallback((message, type = 'info') => {
@@ -119,6 +120,14 @@ export default function CountriesList() {
   const saveCountry = async (e) => {
     e.preventDefault();
     console.log('💾 saveCountry - Début');
+    
+    // Empêcher les doubles soumissions
+    if (submitting) {
+      console.log('⏳ Soumission déjà en cours...');
+      return;
+    }
+    
+    setSubmitting(true);
     console.log('📝 Données modal:', modal);
     
     try {
@@ -145,9 +154,15 @@ export default function CountriesList() {
         showNotification('Pays modifié avec succès', 'success');
       }
       
+      // FERMER LE MODAL IMMÉDIATEMENT APRÈS SUCCÈS
+      console.log('📭 Fermeture du modal...');
       setModal(null);
-      console.log('📭 Modal fermé');
-      fetchCountries();
+      console.log('✅ Modal fermé avec succès');
+      
+      // Recharger les données
+      console.log('🔄 Rechargement des données...');
+      await fetchCountries();
+      console.log('✅ Données rechargées');
       
     } catch (err) {
       console.error('💥 Erreur saveCountry:', err);
@@ -159,6 +174,12 @@ export default function CountriesList() {
       
       const errorMessage = err.response?.data?.message || 'Erreur lors de la sauvegarde du pays';
       showNotification(errorMessage, 'error');
+      
+      // NE PAS FERMER LE MODAL EN CAS D'ERREUR
+      console.log('❌ Erreur - Le modal reste ouvert pour correction');
+    } finally {
+      setSubmitting(false);
+      console.log('🏁 saveCountry - Terminé');
     }
   };
 
@@ -250,7 +271,8 @@ export default function CountriesList() {
     modal: modal ? `${modal.mode} mode` : 'null',
     searchTerm,
     error,
-    notification: notification ? notification.type : 'null'
+    notification: notification ? notification.type : 'null',
+    submitting
   });
 
   return (
@@ -604,7 +626,16 @@ export default function CountriesList() {
 
       {/* Modal */}
       {modal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50"
+          onClick={(e) => {
+            // Fermer le modal en cliquant en dehors (seulement si pas en cours de soumission)
+            if (e.target === e.currentTarget && !submitting) {
+              console.log('👆 Clic en dehors - Fermeture modal');
+              setModal(null);
+            }
+          }}
+        >
           <form
             onSubmit={saveCountry}
             className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto"
@@ -617,10 +648,15 @@ export default function CountriesList() {
               <button
                 type="button"
                 onClick={() => {
-                  console.log('❌ Fermeture modal');
-                  setModal(null);
+                  if (!submitting) {
+                    console.log('❌ Fermeture modal manuelle');
+                    setModal(null);
+                  }
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                disabled={submitting}
+                className={`text-gray-400 hover:text-gray-600 transition-colors ${
+                  submitting ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
                 <X size={20} />
               </button>
@@ -640,6 +676,7 @@ export default function CountriesList() {
                   placeholder="Ex: France, Côte d'Ivoire"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
+                  disabled={submitting}
                 />
               </div>
               
@@ -658,6 +695,7 @@ export default function CountriesList() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
                   required
                   maxLength={3}
+                  disabled={submitting}
                 />
               </div>
               
@@ -674,6 +712,7 @@ export default function CountriesList() {
                   placeholder="Ex: +33, +225, +1"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
+                  disabled={submitting}
                 />
               </div>
               
@@ -696,6 +735,7 @@ export default function CountriesList() {
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
+                  disabled={submitting}
                 >
                   <option value="">Sélectionnez une devise</option>
                   {currencies.map((currency) => (
@@ -717,6 +757,7 @@ export default function CountriesList() {
                       setModal({ ...modal, country: { ...modal.country, is_active: e.target.checked } });
                     }}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                    disabled={submitting}
                   />
                   <label htmlFor="is_active" className="text-sm text-gray-700">
                     Pays actif
@@ -729,18 +770,33 @@ export default function CountriesList() {
               <button 
                 type="button" 
                 onClick={() => {
-                  console.log('❌ Annulation modal');
-                  setModal(null);
-                }} 
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  if (!submitting) {
+                    console.log('❌ Annulation modal');
+                    setModal(null);
+                  }
+                }}
+                disabled={submitting}
+                className={`px-4 py-2 border border-gray-300 rounded-lg text-gray-700 transition-colors ${
+                  submitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'
+                }`}
               >
                 Annuler
               </button>
               <button 
                 type="submit" 
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={submitting}
+                className={`bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                  submitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'
+                }`}
               >
-                {modal.mode === "add" ? "Créer" : "Modifier"}
+                {submitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    {modal.mode === "add" ? "Création..." : "Modification..."}
+                  </>
+                ) : (
+                  modal.mode === "add" ? "Créer" : "Modifier"
+                )}
               </button>
             </div>
           </form>

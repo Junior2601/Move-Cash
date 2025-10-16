@@ -334,3 +334,7 @@ WHERE a.is_active = true;
 ALTER TABLE transactions 
 ADD COLUMN client_validated BOOLEAN DEFAULT FALSE,
 ADD COLUMN client_validated_at TIMESTAMP;
+
+--à ajouter dans les pays
+ALTER TABLE countries 
+ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;

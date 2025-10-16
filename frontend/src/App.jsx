@@ -20,7 +20,7 @@ import AgentLogin from "./pages/Agents/AgentLogin";
 import AgentDashboard from "./pages/Agents/AgentDashboard";
 import TransactionList from "./pages/Agents/MyTransactions";
 import TransactionDetail from "./pages/Agents/TransactionDetail";
-import MyBalances from "./pages/agents/MyBalances";
+// import MyBalances from "./pages/agents/MyBalances";
 // import AgentHistory from "./pages/Agents/History";
 import AgentLayout from "./layouts/AgentLayout";
 import ProtectedRouteAgent from "./components/ui/ProtectedRouteAgent";
@@ -76,7 +76,7 @@ export default function App() {
               <Route path="dashboard" element={<AgentDashboard />} />
               <Route path="transactions" element={<TransactionList />} />
               <Route path="transactions/:id" element={<TransactionDetail />} />
-              <Route path="balances" element={<MyBalances />} />
+              {/* <Route path="balances" element={<MyBalances />} /> */}
               {/* <Route path="history" element={<AgentHistory />} /> */}
             </Route>
 
@@ -84,7 +84,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             
             <Route path="/transaction" element={<TransactionPage />} />
-            <Route path="/transaction/:transactionId" element={<TransactionClientDetail />} />
+            <Route path="/transaction/:encryptedId" element={<TransactionClientDetail />} />
             <Route path="/tracking" element={<TrackingPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/calculator" element={<CalculatorPage />} />

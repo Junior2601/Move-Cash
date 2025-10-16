@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../api/api';
 import { Clock, User, Phone, CreditCard, CheckCircle, AlertCircle, Copy, ArrowLeft } from 'lucide-react';
+import { decryptId } from '../../utils/encryption'; // Import du service de déchiffrement
 
 export default function TransactionDetail() {
-  const { transactionId } = useParams();
+  const { encryptedId } = useParams(); // Changement de transactionId à encryptedId
   const navigate = useNavigate();
   const [transaction, setTransaction] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -14,15 +15,30 @@ export default function TransactionDetail() {
   const [copiedField, setCopiedField] = useState('');
   const [isClientSideExpired, setIsClientSideExpired] = useState(false);
 
-  // Fonction pour calculer le temps restant - VERSION CORRIGÉE UTC
+  // Fonction pour déchiffrer l'ID
+  const getDecryptedId = () => {
+    if (!encryptedId) {
+      setError('ID de transaction invalide');
+      return null;
+    }
+    
+    const decryptedId = decryptId(encryptedId);
+    if (!decryptedId) {
+      setError('Transaction non trouvée ou ID invalide');
+      return null;
+    }
+    
+    console.log('🔓 ID déchiffré:', { encrypted: encryptedId, decrypted: decryptedId });
+    return decryptedId;
+  };
+
+  // Fonction pour calculer le temps restant
   const calculateTimeLeft = (expiresAt) => {
     if (!expiresAt) return 0;
     
-    // Les dates sont maintenant en UTC depuis le serveur corrigé
     const serverExpiresAt = new Date(expiresAt);
     const now = new Date();
     
-    // Calculer la différence en secondes (les deux en UTC)
     const diff = Math.max(0, Math.floor((serverExpiresAt - now) / 1000));
     
     console.log('⏰ Calcul temps restant UTC:', {
@@ -40,6 +56,10 @@ export default function TransactionDetail() {
   const fetchTransaction = async () => {
     try {
       setLoading(true);
+      
+      const transactionId = getDecryptedId();
+      if (!transactionId) return;
+
       const response = await api.get(`/transactions/${transactionId}`);
       const transactionData = response.data.data;
       setTransaction(transactionData);
@@ -54,8 +74,8 @@ export default function TransactionDetail() {
         is_expired: new Date() > new Date(transactionData.expires_at)
       });
 
-      // Calculer le temps restant seulement si la transaction est en attente
-      if (transactionData.status === 'en_attente' && transactionData.expires_at) {
+      // Calculer le temps restant seulement si la transaction est en attente et non validée
+      if (transactionData.status === 'en_attente' && transactionData.expires_at && !transactionData.client_validated) {
         const timeLeft = calculateTimeLeft(transactionData.expires_at);
         setTimeLeft(timeLeft);
         
@@ -71,8 +91,10 @@ export default function TransactionDetail() {
           is_client_side_expired: timeLeft <= 0
         });
       } else {
+        // Arrêter le minuteur si la transaction n'est plus en attente ou est validée
         setTimeLeft(0);
-        setIsClientSideExpired(transactionData.status !== 'en_attente');
+        // IMPORTANT: Ne pas marquer comme expiré si la transaction est validée
+        setIsClientSideExpired(transactionData.status === 'en_attente' && !transactionData.client_validated);
       }
     } catch (err) {
       console.error('Erreur chargement transaction:', err);
@@ -84,32 +106,52 @@ export default function TransactionDetail() {
 
   useEffect(() => {
     fetchTransaction();
-  }, [transactionId]);
+  }, [encryptedId]);
 
-  // Mettre à jour le compte à rebours seulement pour les transactions en attente
+  // CORRECTION : Mettre à jour le compte à rebours seulement pour les transactions en attente non validées
   useEffect(() => {
-    if (timeLeft <= 0 || !transaction || transaction.status !== 'en_attente') {
-      if (timeLeft <= 0 && transaction?.status === 'en_attente') {
-        setIsClientSideExpired(true);
-      }
+    // Arrêter le minuteur si la transaction n'est pas en attente OU si elle a été validée côté client
+    if (!transaction || transaction.status !== 'en_attente' || transaction.client_validated) {
+      setTimeLeft(0);
+      // IMPORTANT: Ne pas marquer comme expiré si la transaction est validée
+      setIsClientSideExpired(transaction?.status === 'en_attente' && !transaction?.client_validated);
+      return;
+    }
+
+    // Si le temps est écoulé, on arrête
+    if (timeLeft <= 0) {
+      setIsClientSideExpired(true);
+      // Recharger la transaction pour voir le statut "expirée"
+      fetchTransaction();
       return;
     }
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 1) {
+        const newTime = prev - 1;
+        
+        if (newTime <= 0) {
           clearInterval(timer);
           setIsClientSideExpired(true);
           // Recharger la transaction pour voir le statut "expirée"
           fetchTransaction();
           return 0;
         }
-        return prev - 1;
+        return newTime;
       });
     }, 1000);
 
+    // Nettoyage du timer
     return () => clearInterval(timer);
   }, [timeLeft, transaction]);
+
+  // Nettoyage du timer lors du démontage du composant
+  useEffect(() => {
+    return () => {
+      setTimeLeft(0);
+      setIsClientSideExpired(false);
+    };
+  }, []);
 
   // Debug effect
   useEffect(() => {
@@ -117,6 +159,7 @@ export default function TransactionDetail() {
       transaction,
       timeLeft,
       isPending: transaction?.status === 'en_attente',
+      isClientValidated: transaction?.client_validated,
       isClientSideExpired,
       expiresAt: transaction?.expires_at,
       now: new Date().toISOString(),
@@ -135,22 +178,27 @@ export default function TransactionDetail() {
     }
   };
 
-  // Valider la transaction (confirmation client)
+  // CORRECTION : Valider la transaction (confirmation client)
   const handleValidate = async () => {
     if (!transaction || transaction.status !== 'en_attente') return;
 
     try {
       setIsValidating(true);
       
+      const transactionId = getDecryptedId();
+      if (!transactionId) return;
+
       // Appeler l'endpoint de validation client
       await api.post(`/transactions/${transactionId}/client-validate`);
       
       // Recharger les données pour obtenir le statut mis à jour
       await fetchTransaction();
       
-      // Arrêter le minuteur
+      // CORRECTION : Arrêter explicitement le minuteur SANS marquer comme expiré
       setTimeLeft(0);
-      setIsClientSideExpired(false);
+      setIsClientSideExpired(false); // IMPORTANT: false au lieu de true
+      
+      console.log('✅ Transaction validée - minuteur arrêté');
       
       alert('Transaction validée avec succès !');
     } catch (err) {
@@ -176,6 +224,24 @@ export default function TransactionDetail() {
       currency: currencyCode
     }).format(amount);
   };
+
+  // CORRECTION : Calcul des statuts basé sur les données actuelles
+  const isExpired = transaction?.status === 'expiree';
+  const isCompleted = transaction?.status === 'effectuee';
+  const isFailed = transaction?.status === 'echouee';
+  const isPending = transaction?.status === 'en_attente';
+  const isClientValidated = transaction?.client_validated;
+
+  // CORRECTION : Vérification si le minuteur doit être affiché
+  const shouldShowTimer = isPending && 
+                         !isClientValidated && 
+                         !isClientSideExpired && 
+                         timeLeft > 0;
+
+  // CORRECTION : Quand afficher le message d'expiration
+  const shouldShowExpiredMessage = (isClientSideExpired || isExpired) && 
+                                  isPending && 
+                                  !isClientValidated;
 
   if (loading) {
     return (
@@ -205,12 +271,6 @@ export default function TransactionDetail() {
       </div>
     );
   }
-
-  const isExpired = transaction.status === 'expiree';
-  const isCompleted = transaction.status === 'effectuee';
-  const isFailed = transaction.status === 'echouee';
-  const isPending = transaction.status === 'en_attente';
-  const isClientValidated = transaction.client_validated;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -250,7 +310,8 @@ export default function TransactionDetail() {
                 </div>
               </div>
 
-              {isPending && !isClientSideExpired && (
+              {/* CORRECTION : Condition améliorée pour l'affichage du timer */}
+              {shouldShowTimer && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
@@ -275,7 +336,8 @@ export default function TransactionDetail() {
                 </div>
               )}
 
-              {(isClientSideExpired || isExpired) && (
+              {/* CORRECTION : Message d'expiration seulement si non validé */}
+              {shouldShowExpiredMessage && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                   <div className="flex items-center space-x-3">
                     <AlertCircle className="h-6 w-6 text-red-600" />
@@ -371,11 +433,14 @@ export default function TransactionDetail() {
                   <li>• Transférez exactement le montant indiqué</li>
                   <li>• Utilisez uniquement le numéro fourni</li>
                   <li>• Ne partagez pas le code de suivi</li>
-                  {isPending && !isClientSideExpired && (
+                  {shouldShowTimer && (
                     <li>• La transaction expire dans {formatTime(timeLeft)}</li>
                   )}
-                  {(isClientSideExpired || isExpired) && (
+                  {shouldShowExpiredMessage && (
                     <li>• La transaction a expiré</li>
+                  )}
+                  {isClientValidated && (
+                    <li>• Transaction validée - en attente du versement</li>
                   )}
                 </ul>
               </div>
@@ -424,8 +489,8 @@ export default function TransactionDetail() {
               </div>
             </div>
 
-            {/* Bouton de validation */}
-            {isPending && !isClientValidated && !isClientSideExpired && (
+            {/* CORRECTION : Bouton de validation avec conditions améliorées */}
+            {isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0 && (
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirmation</h3>
                 <p className="text-gray-600 text-sm mb-4">
@@ -434,7 +499,7 @@ export default function TransactionDetail() {
                 
                 <button
                   onClick={handleValidate}
-                  disabled={isValidating || timeLeft <= 0}
+                  disabled={isValidating}
                   className="w-full flex items-center justify-center space-x-2 bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isValidating ? (
@@ -449,12 +514,6 @@ export default function TransactionDetail() {
                     </>
                   )}
                 </button>
-                
-                {timeLeft <= 0 && (
-                  <p className="text-red-600 text-sm mt-2 text-center">
-                    Temps écoulé - transaction expirée
-                  </p>
-                )}
               </div>
             )}
 
@@ -473,8 +532,8 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {/* Message d'expiration côté client */}
-            {isClientSideExpired && isPending && (
+            {/* CORRECTION : Message d'expiration seulement si non validé */}
+            {shouldShowExpiredMessage && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-6">
                 <div className="text-center">
                   <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-3" />

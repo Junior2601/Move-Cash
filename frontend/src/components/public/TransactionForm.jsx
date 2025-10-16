@@ -7,6 +7,7 @@ import {
   getPhoneFormatExamples,
   formatPhoneWithPrefix 
 } from '../../utils/phoneValidator';
+import { encryptId } from '../../utils/encryption'; // Import du service de chiffrement
 
 export default function TransactionForm({ onTransactionComplete }) {
   const [formData, setFormData] = useState({
@@ -372,16 +373,38 @@ export default function TransactionForm({ onTransactionComplete }) {
       
       console.log('✅ Réponse transaction:', res.data);
 
-      // REDIRECTION VERS LA PAGE DE DÉTAIL
+      // REDIRECTION VERS LA PAGE DE DÉTAIL AVEC ID CHIFFRÉ
       if (res.data.data?.id) {
-        console.log('🎯 Redirection vers transaction:', res.data.data.id);
-        navigate(`/transaction/${res.data.data.id}`);
+        const transactionId = res.data.data.id;
+        const encryptedId = encryptId(transactionId);
+        
+        if (encryptedId) {
+          console.log('🎯 Redirection vers transaction chiffrée:', { id: transactionId, encrypted: encryptedId });
+          navigate(`/transaction/${encryptedId}`);
+        } else {
+          console.error('❌ Erreur de chiffrement, redirection sans chiffrement');
+          navigate(`/transaction/${transactionId}`);
+        }
       } else if (res.data.id) {
         // Format alternatif
-        navigate(`/transaction/${res.data.id}`);
+        const transactionId = res.data.id;
+        const encryptedId = encryptId(transactionId);
+        
+        if (encryptedId) {
+          navigate(`/transaction/${encryptedId}`);
+        } else {
+          navigate(`/transaction/${transactionId}`);
+        }
       } else if (res.data.transaction?.id) {
         // Autre format possible
-        navigate(`/transaction/${res.data.transaction.id}`);
+        const transactionId = res.data.transaction.id;
+        const encryptedId = encryptId(transactionId);
+        
+        if (encryptedId) {
+          navigate(`/transaction/${encryptedId}`);
+        } else {
+          navigate(`/transaction/${transactionId}`);
+        }
       } else {
         console.warn('Structure de réponse inattendue:', res.data);
         
@@ -394,6 +417,12 @@ export default function TransactionForm({ onTransactionComplete }) {
             const trackRes = await api.get(`/transactions/tracking/${res.data.data.tracking_code}`);
             if (trackRes.data.data?.id) {
               transactionId = trackRes.data.data.id;
+              const encryptedId = encryptId(transactionId);
+              
+              if (encryptedId) {
+                navigate(`/transaction/${encryptedId}`);
+                return;
+              }
             }
           } catch (trackError) {
             console.error('Erreur recherche par tracking:', trackError);
@@ -401,7 +430,8 @@ export default function TransactionForm({ onTransactionComplete }) {
         }
         
         if (transactionId) {
-          navigate(`/transaction/${transactionId}`);
+          const encryptedId = encryptId(transactionId);
+          navigate(`/transaction/${encryptedId || transactionId}`);
         } else {
           // Fallback - utiliser l'ancien comportement
           if (onTransactionComplete) {
