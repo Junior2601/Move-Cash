@@ -475,7 +475,7 @@ export default function MyTransactions() {
                       <div className="flex items-center gap-2">
                         {/* Voir détails */}
                         <Link
-                          to={`/agent/transaction/${transaction.id}`}
+                          to={`/agent/transactions/${transaction.id}`}
                           className="inline-flex items-center px-3 py-1 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm"
                         >
                           Détails

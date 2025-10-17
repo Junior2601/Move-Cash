@@ -57,15 +57,15 @@ export default function TrackingForm() {
     const formattedStatus = getFormattedStatus(status);
     switch (formattedStatus) {
       case 'En attente':
-        return <Clock className="h-8 w-8 text-yellow-600" />;
+        return <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-yellow-600" />;
       case 'Effectuée':
-        return <CheckCircle className="h-8 w-8 text-green-600" />;
+        return <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-green-600" />;
       case 'Échouée':
-        return <XCircle className="h-8 w-8 text-red-600" />;
+        return <XCircle className="h-6 w-6 sm:h-8 sm:w-8 text-red-600" />;
       case 'Expirée':
-        return <AlertCircle className="h-8 w-8 text-gray-600" />;
+        return <AlertCircle className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600" />;
       default:
-        return <Package className="h-8 w-8 text-gray-400" />;
+        return <Package className="h-6 w-6 sm:h-8 sm:w-8 text-gray-400" />;
     }
   };
 
@@ -111,39 +111,41 @@ export default function TrackingForm() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
       {/* Search Form */}
-      <div className="bg-gray-50 rounded-lg p-6">
-        <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+      <div className="bg-gray-50 rounded-lg p-4 sm:p-6">
+        <h4 className="text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
           <Search className="h-5 w-5 text-blue-600 mr-2" />
           Rechercher une Transaction
         </h4>
         
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <div className="flex-1">
             <input
               type="text"
               value={trackingCode}
               onChange={(e) => setTrackingCode(e.target.value)}
               placeholder="Entrez votre code de suivi (ex: TRX12345678)"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              className="w-full px-3 sm:px-4 py-3 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
           <button
             onClick={handleSearch}
             disabled={!trackingCode.trim() || isSearching}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+            className="px-4 sm:px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors text-sm sm:text-base"
           >
             {isSearching ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                <span>Recherche...</span>
+                <span className="hidden sm:inline">Recherche...</span>
+                <span className="sm:hidden">...</span>
               </>
             ) : (
               <>
                 <Search className="h-4 w-4" />
-                <span>Rechercher</span>
+                <span className="hidden sm:inline">Rechercher</span>
+                <span className="sm:hidden">OK</span>
               </>
             )}
           </button>
@@ -154,34 +156,34 @@ export default function TrackingForm() {
       {searchResult && (
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
           {searchResult === 'not_found' ? (
-            <div className="p-8 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Package className="h-8 w-8 text-gray-400" />
+            <div className="p-6 sm:p-8 text-center">
+              <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                <Package className="h-6 w-6 sm:h-8 sm:w-8 text-gray-400" />
               </div>
-              <h5 className="text-lg font-semibold text-gray-900 mb-2">Transaction Introuvable</h5>
-              <p className="text-gray-600">
+              <h5 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">Transaction Introuvable</h5>
+              <p className="text-sm sm:text-base text-gray-600">
                 Aucune transaction trouvée avec ce code. Vérifiez que vous avez saisi le bon code de suivi.
               </p>
             </div>
           ) : (
             <div>
               {/* Status Header */}
-              <div className={`bg-${getStatusColor(searchResult.data?.status)}-50 px-6 py-4 border-b border-${getStatusColor(searchResult.data?.status)}-200`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+              <div className={`bg-${getStatusColor(searchResult.data?.status)}-50 px-4 sm:px-6 py-3 sm:py-4 border-b border-${getStatusColor(searchResult.data?.status)}-200`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                  <div className="flex items-center space-x-2 sm:space-x-3">
                     {getStatusIcon(searchResult.data?.status)}
                     <div>
-                      <h5 className="text-lg font-semibold text-gray-900">
+                      <h5 className="text-base sm:text-lg font-semibold text-gray-900">
                         {getFormattedStatus(searchResult.data?.status)}
                       </h5>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs sm:text-sm text-gray-600">
                         Code: {searchResult.data?.tracking_code || trackingCode}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-600">Créée le</p>
-                    <p className="text-sm font-medium text-gray-900">
+                  <div className="text-left sm:text-right">
+                    <p className="text-xs sm:text-sm text-gray-600">Créée le</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-900">
                       {formatDate(searchResult.data?.created_at)}
                     </p>
                   </div>
@@ -189,30 +191,30 @@ export default function TrackingForm() {
               </div>
 
               {/* Transaction Details */}
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="p-4 sm:p-6">
+                <div className="grid grid-cols-1 gap-4 sm:gap-6">
                   {/* Sender Info */}
-                  <div className="space-y-4">
-                    <h6 className="font-semibold text-gray-900 flex items-center">
+                  <div className="space-y-3 sm:space-y-4">
+                    <h6 className="font-semibold text-gray-900 flex items-center text-sm sm:text-base">
                       <User className="h-4 w-4 text-blue-600 mr-2" />
                       Expéditeur
                     </h6>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium">{searchResult.data?.from_country_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.from_country_name || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
-                        <p className="font-medium">{searchResult.data?.sender_phone || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.sender_phone || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de paiement</span>
-                        <p className="font-medium">{searchResult.data?.sender_method_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.sender_method_name || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Montant envoyé</span>
-                        <p className="font-medium">
+                        <p className="font-medium text-sm sm:text-base">
                           {formatCurrency(
                             searchResult.data?.send_amount, 
                             searchResult.data?.from_currency_code,
@@ -224,27 +226,27 @@ export default function TrackingForm() {
                   </div>
 
                   {/* Receiver Info */}
-                  <div className="space-y-4">
-                    <h6 className="font-semibold text-gray-900 flex items-center">
+                  <div className="space-y-3 sm:space-y-4">
+                    <h6 className="font-semibold text-gray-900 flex items-center text-sm sm:text-base">
                       <User className="h-4 w-4 text-green-600 mr-2" />
                       Bénéficiaire
                     </h6>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium">{searchResult.data?.to_country_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.to_country_name || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
-                        <p className="font-medium">{searchResult.data?.receiver_phone || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.receiver_phone || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de réception</span>
-                        <p className="font-medium">{searchResult.data?.receiver_method_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.receiver_method_name || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Montant à recevoir</span>
-                        <p className="font-medium text-green-600">
+                        <p className="font-medium text-green-600 text-sm sm:text-base">
                           {formatCurrency(
                             searchResult.data?.receive_amount, 
                             searchResult.data?.to_currency_code,
@@ -257,33 +259,33 @@ export default function TrackingForm() {
                 </div>
 
                 {/* Informations supplémentaires */}
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-gray-50 rounded-lg p-4">
+                <div className="mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
                     <span className="text-xs text-gray-500 uppercase tracking-wide">Taux appliqué</span>
-                    <p className="font-medium">{searchResult.data?.rate_applied ? `1 → ${searchResult.data.rate_applied}` : 'Non spécifié'}</p>
+                    <p className="font-medium text-sm sm:text-base">{searchResult.data?.rate_applied ? `1 → ${searchResult.data.rate_applied}` : 'Non spécifié'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
                     <span className="text-xs text-gray-500 uppercase tracking-wide">Commission</span>
-                    <p className="font-medium">{searchResult.data?.commission_applied ? `${searchResult.data.commission_applied}%` : 'Non spécifié'}</p>
+                    <p className="font-medium text-sm sm:text-base">{searchResult.data?.commission_applied ? `${searchResult.data.commission_applied}%` : 'Non spécifié'}</p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
                     <span className="text-xs text-gray-500 uppercase tracking-wide">Numéro autorisé</span>
-                    <p className="font-medium">{searchResult.data?.authorized_number || 'Non spécifié'}</p>
+                    <p className="font-medium text-sm sm:text-base">{searchResult.data?.authorized_number || 'Non spécifié'}</p>
                   </div>
                 </div>
 
                 {/* Status Messages */}
                 {searchResult.data?.status === 'en_attente' && (
-                  <div className="mt-6 bg-yellow-50 rounded-lg p-4">
-                    <h6 className="font-semibold text-yellow-800 mb-3 flex items-center">
+                  <div className="mt-4 sm:mt-6 bg-yellow-50 rounded-lg p-3 sm:p-4">
+                    <h6 className="font-semibold text-yellow-800 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
                       <Clock className="h-4 w-4 mr-2" />
                       Transaction en Cours
                     </h6>
-                    <p className="text-sm text-yellow-700">
+                    <p className="text-xs sm:text-sm text-yellow-700">
                       Votre transaction est en attente de confirmation. L'agent procédera au transfert une fois le paiement reçu.
                     </p>
                     {searchResult.data?.expires_at && (
-                      <p className="text-sm text-yellow-600 mt-2">
+                      <p className="text-xs sm:text-sm text-yellow-600 mt-2">
                         ⏰ Expire le: {formatDate(searchResult.data.expires_at)}
                       </p>
                     )}
@@ -291,16 +293,16 @@ export default function TrackingForm() {
                 )}
 
                 {searchResult.data?.status === 'effectuee' && (
-                  <div className="mt-6 bg-green-50 rounded-lg p-4">
-                    <h6 className="font-semibold text-green-800 mb-3 flex items-center">
+                  <div className="mt-4 sm:mt-6 bg-green-50 rounded-lg p-3 sm:p-4">
+                    <h6 className="font-semibold text-green-800 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Transaction Terminée
                     </h6>
-                    <p className="text-sm text-green-700">
+                    <p className="text-xs sm:text-sm text-green-700">
                       Le bénéficiaire a reçu les fonds avec succès.
                     </p>
                     {searchResult.data?.completed_at && (
-                      <p className="text-sm text-green-600 mt-2">
+                      <p className="text-xs sm:text-sm text-green-600 mt-2">
                         ✅ Complétée le: {formatDate(searchResult.data.completed_at)}
                       </p>
                     )}
@@ -308,24 +310,24 @@ export default function TrackingForm() {
                 )}
 
                 {searchResult.data?.status === 'echouee' && (
-                  <div className="mt-6 bg-red-50 rounded-lg p-4">
-                    <h6 className="font-semibold text-red-800 mb-3 flex items-center">
+                  <div className="mt-4 sm:mt-6 bg-red-50 rounded-lg p-3 sm:p-4">
+                    <h6 className="font-semibold text-red-800 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
                       <XCircle className="h-4 w-4 mr-2" />
                       Transaction Échouée
                     </h6>
-                    <p className="text-sm text-red-700">
+                    <p className="text-xs sm:text-sm text-red-700">
                       La transaction a échoué. Contactez le service client pour plus d'informations.
                     </p>
                   </div>
                 )}
 
                 {searchResult.data?.status === 'expiree' && (
-                  <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                    <h6 className="font-semibold text-gray-800 mb-3 flex items-center">
+                  <div className="mt-4 sm:mt-6 bg-gray-50 rounded-lg p-3 sm:p-4">
+                    <h6 className="font-semibold text-gray-800 mb-2 sm:mb-3 flex items-center text-sm sm:text-base">
                       <AlertCircle className="h-4 w-4 mr-2" />
                       Transaction Expirée
                     </h6>
-                    <p className="text-sm text-gray-700">
+                    <p className="text-xs sm:text-sm text-gray-700">
                       Le délai de paiement a expiré. Créez une nouvelle transaction si nécessaire.
                     </p>
                   </div>
