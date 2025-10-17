@@ -201,6 +201,7 @@ CREATE TABLE redirections (
     status VARCHAR(20) DEFAULT 'pending', -- pending, accepted, rejected
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     
     CONSTRAINT positive_redirected_amount CHECK (redirected_amount > 0),
     CONSTRAINT different_agents CHECK (from_agent_id != to_agent_id)

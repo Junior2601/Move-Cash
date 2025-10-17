@@ -20,6 +20,7 @@ import AgentLogin from "./pages/Agents/AgentLogin";
 import AgentDashboard from "./pages/Agents/AgentDashboard";
 import TransactionList from "./pages/Agents/MyTransactions";
 import TransactionDetail from "./pages/Agents/TransactionDetail";
+import AgentRedirectedTransactions from "./pages/Agents/AgentRedirectedTransactions";
 // import MyBalances from "./pages/agents/MyBalances";
 // import AgentHistory from "./pages/Agents/History";
 import AgentLayout from "./layouts/AgentLayout";
@@ -76,6 +77,7 @@ export default function App() {
               <Route path="dashboard" element={<AgentDashboard />} />
               <Route path="transactions" element={<TransactionList />} />
               <Route path="transactions/:id" element={<TransactionDetail />} />
+              <Route path="redirected-transactions" element={<AgentRedirectedTransactions />} />
               {/* <Route path="balances" element={<MyBalances />} /> */}
               {/* <Route path="history" element={<AgentHistory />} /> */}
             </Route>

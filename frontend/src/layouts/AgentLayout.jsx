@@ -4,7 +4,7 @@ import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   RefreshCw,
-  Wallet,
+  MessageSquareShare,
   History,
   LogOut,
   ChevronRight,
@@ -27,7 +27,7 @@ export default function AgentLayout() {
   const menuItems = [
     { path: "/agent/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
     { path: "/agent/transactions", label: "Transactions", icon: RefreshCw },
-    { path: "/agent/balances", label: "Mes fonds", icon: Wallet },
+    { path: "/agent/redirected-transactions", label: "Mes redirections", icon: MessageSquareShare },
     { path: "/agent/history", label: "Historique", icon: History },
   ];
 

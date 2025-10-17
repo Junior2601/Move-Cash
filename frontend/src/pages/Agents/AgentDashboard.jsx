@@ -11,7 +11,8 @@ import {
   RefreshCw,
   Eye,
   ShieldAlert,
-  User
+  User,
+  Euro
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import useAgentApi from "../../hooks/useAgentApi";
@@ -77,14 +78,14 @@ export default function AgentDashboard() {
     </div>
   );
 
-  const BalanceBadge = ({ balance, code }) => {
+  const BalanceBadge = ({ balance, code, symbol }) => {
     if (parseFloat(balance || 0) === 0) return null;
 
     return (
       <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-sky-100 text-sky-700 border border-sky-200 text-xs font-medium hover:bg-sky-200 transition-colors duration-150">
         <span>{code}</span>
         <span className="text-sky-600">
-          {parseFloat(balance || 0).toFixed(0)}
+          {symbol}{parseFloat(balance || 0).toFixed(2)}
         </span>
       </div>
     );
@@ -113,7 +114,7 @@ export default function AgentDashboard() {
       </div>
       <div className="text-right">
         <p className="font-semibold text-slate-800">
-          {parseFloat(transaction.send_amount || 0).toFixed(2)} €
+          {parseFloat(transaction.send_amount || 0).toFixed(2)} {transaction.from_currency_symbol || '€'}
         </p>
         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
           transaction.status === 'effectuee' ? 'bg-green-100 text-green-800' :
@@ -131,6 +132,7 @@ export default function AgentDashboard() {
   const agentInfo = JSON.parse(localStorage.getItem("agentInfo") || "{}");
   const recentTransactions = dashboardData?.recent_transactions || [];
   const balancesByCurrency = dashboardData?.balances_by_currency || [];
+  const monthlyVolumeByCurrency = dashboardData?.monthly_volume_by_currency || [];
   
   // Filtrer les soldes non nuls
   const nonZeroBalances = balancesByCurrency.filter(balance => 
@@ -217,7 +219,7 @@ export default function AgentDashboard() {
               <p className="text-2xl font-bold text-slate-800">
                 {dashboardData?.balance?.toFixed(2) || '0.00'} €
               </p>
-              <p className="text-xs text-slate-500 mt-1">Solde disponible</p>
+              <p className="text-xs text-slate-500 mt-1">Montant total disponible</p>
             </div>
             <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 group-hover:scale-110 transition-transform duration-300">
               <Wallet className="w-6 h-6 text-white" />
@@ -234,6 +236,7 @@ export default function AgentDashboard() {
                     key={index}
                     balance={balance.balance}
                     code={balance.currency_code}
+                    symbol={balance.currency_symbol}
                   />
                 ))}
               </div>
@@ -277,12 +280,44 @@ export default function AgentDashboard() {
             <h3 className="font-semibold text-slate-800">Performance du Mois</h3>
           </div>
           <div className="space-y-4">
+            {/* Volume total des transactions */}
             <div className="flex justify-between items-center">
-              <span className="text-slate-600 text-sm">Commission totale</span>
+              <span className="text-slate-600 text-sm">Volume total</span>
+              <span className="font-semibold text-blue-600">
+                {dashboardData?.monthly_volume?.toFixed(2) || '0.00'} €
+              </span>
+            </div>
+            
+            {/* Commissions totales */}
+            <div className="flex justify-between items-center">
+              <span className="text-slate-600 text-sm">Commissions</span>
               <span className="font-semibold text-emerald-600">
                 +{dashboardData?.monthly_earnings?.toFixed(2) || '0.00'} €
               </span>
             </div>
+            
+            {/* Volume par devise */}
+            {monthlyVolumeByCurrency.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <p className="text-xs text-slate-500 font-medium mb-2">VOLUME PAR DEVISES</p>
+                {monthlyVolumeByCurrency.map((currencyData, index) => (
+                  <div key={index} className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">
+                      {currencyData.currency_code}
+                    </span>
+                    <div className="text-right">
+                      <div className="font-medium text-slate-700">
+                        {parseFloat(currencyData.total_volume).toFixed(2)} {currencyData.currency_symbol}
+                      </div>
+                      <div className="text-emerald-600">
+                        +{parseFloat(currencyData.total_commissions).toFixed(2)} com.
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
             <div className="flex justify-between items-center">
               <span className="text-slate-600 text-sm">Transactions</span>
               <span className="font-semibold text-slate-800">

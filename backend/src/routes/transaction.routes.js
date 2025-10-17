@@ -1,4 +1,4 @@
-// routes/transaction.routes.js
+// src/routes/transaction.routes.js
 import express from 'express';
 import {
   createTransactionController,
@@ -15,11 +15,11 @@ import {
   getTransactionStatsController,
   getAgentPersonalStatsController,
   getAgentGainsHistoryController,
-  getAgentDashboardController
+  getAgentDashboardController,
+  getAgentRedirectedTransactionsController
 } from '../controllers/transaction.controller.js';
 
 import { verifyAdminToken, verifyAgentToken } from '../middlewares/auth.middleware.js';
-import { debugDatabase } from '../middlewares/debug.middleware.js';
 
 const router = express.Router();
 
@@ -39,6 +39,7 @@ router.put('/:transaction_id/cancel-agent', verifyAgentToken, cancelTransactionC
 router.post('/redirect', verifyAgentToken, redirectTransactionController);
 router.put('/redirections/:redirection_id/accept', verifyAgentToken, acceptRedirectionController);
 router.put('/redirections/:redirection_id/reject', verifyAgentToken, rejectRedirectionController);
+router.get('/agent/redirected-transactions', verifyAgentToken, getAgentRedirectedTransactionsController);
 
 // ============= ADMIN ROUTES =============
 router.get('/admin/all-transactions', verifyAdminToken, getAllTransactionsController);

@@ -1,3 +1,4 @@
+// src/models/transaction.repository.js
 import { pool } from '../config/db.js';
 import { logHistory } from './history.repository.js';
 import { 
@@ -449,7 +450,7 @@ export const clientValidateTransaction = async (transaction_id) => {
 };
 
 // =========================
-// Valider une transaction agent ou admin
+// Valider une transaction agent ou admin - VERSION CORRIGÉE
 // =========================
 export const validateTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
@@ -486,30 +487,42 @@ export const validateTransaction = async (transaction_id, actor) => {
       [transaction_id]
     );
 
-    // Récupérer la devise de réception
+    // Récupérer la devise de l'agent (devise du pays d'envoi)
     const currencyRes = await client.query(
-      `SELECT currency_id FROM payment_methods WHERE id = $1`,
-      [trx.receiver_method_id]
+      `SELECT 
+          fc.currency_id,
+          c.code as currency_code,
+          c.symbol as currency_symbol
+       FROM transactions t
+       JOIN countries fc ON t.from_country_id = fc.id
+       JOIN currencies c ON fc.currency_id = c.id
+       WHERE t.id = $1`,
+      [transaction_id]
     );
     
     if (currencyRes.rows.length === 0) {
-      throw new Error('Devise introuvable pour la méthode de réception');
+      throw new Error('Devise introuvable pour le pays d\'envoi');
     }
     
-    const currency_id = currencyRes.rows[0].currency_id;
+    const { currency_id, currency_code, currency_symbol } = currencyRes.rows[0];
 
-    // Calcul du gain
+    // Calcul du gain en fonction du montant d'envoi (dans la devise d'envoi)
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
-    console.log('💰 Gain calculé:', gain_amount);
+    console.log('💰 Gain calculé:', {
+      send_amount: trx.send_amount,
+      commission_percent: trx.commission_applied,
+      gain_amount: gain_amount,
+      currency: currency_code
+    });
 
-    // Insérer dans la table gains
+    // CORRECTION : Insérer dans la table gains
     await client.query(
       `INSERT INTO gains (transaction_id, agent_id, currency_id, gain_amount, commission_percent_applied)
        VALUES ($1, $2, $3, $4, $5)`,
       [transaction_id, trx.assigned_agent_id, currency_id, gain_amount, trx.commission_applied]
     );
 
-    // Créditer la balance de l'agent
+    // CORRECTION : Créditer la balance de l'agent avec le MONTANT TOTAL de la transaction
     await client.query(
       `INSERT INTO balances (agent_id, currency_id, amount)
        VALUES ($1, $2, $3)
@@ -518,6 +531,14 @@ export const validateTransaction = async (transaction_id, actor) => {
       [trx.assigned_agent_id, currency_id, trx.send_amount]
     );
 
+    console.log('✅ Balance créditée:', {
+      agent_id: trx.assigned_agent_id,
+      currency_id: currency_id,
+      amount_added: trx.send_amount,
+      currency: currency_code,
+      commission_gain: gain_amount
+    });
+
     // 🔎 Log de validation de transaction
     await logHistory({
       action_type: 'transaction_validated',
@@ -525,18 +546,25 @@ export const validateTransaction = async (transaction_id, actor) => {
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
-      description: `Transaction validée - Montant: ${trx.send_amount}, Code: ${trx.tracking_code}`,
+      description: `Transaction validée - Montant: ${trx.send_amount} ${currency_code}, Gain: ${gain_amount} ${currency_code}, Code: ${trx.tracking_code}`,
       metadata: { 
         agent_id: trx.assigned_agent_id,
+        transaction_amount: trx.send_amount,
         gain_amount,
         commission_percent: trx.commission_applied,
+        currency: currency_code,
         validated_by: actor.id
       }
     }, client);
 
     await client.query('COMMIT');
     console.log('✅ Transaction validée avec succès:', transaction_id);
-    return { message: 'Transaction validée avec succès' };
+    return { 
+      message: 'Transaction validée avec succès',
+      transaction_amount: trx.send_amount,
+      gain_amount,
+      currency: currency_code
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Erreur validation transaction:', err);
@@ -1116,8 +1144,282 @@ export const findTransactionsByAgent = async (agent_id, {
 };
 
 // =========================
-// Récupérer les statistiques des transactions
+// Récupérer les statistiques d'un agent spécifique - VERSION CORRIGÉE
 // =========================
+export const getAgentStats = async (agent_id, filters = {}) => {
+  const client = await pool.connect();
+  try {
+    const {
+      start_date = null,
+      end_date = null,
+      status = null
+    } = filters;
+
+    console.log('📊 Statistiques agent:', { agent_id, filters });
+
+    // Statistiques par statut
+    let statsQuery = `
+      SELECT 
+        status,
+        COUNT(*) as count,
+        COALESCE(SUM(send_amount), 0) as total_send_amount,
+        COALESCE(SUM(receive_amount), 0) as total_receive_amount,
+        COALESCE(SUM(g.gain_amount), 0) as total_gains
+      FROM transactions t
+      LEFT JOIN gains g ON t.id = g.transaction_id
+      WHERE t.assigned_agent_id = $1
+    `;
+    
+    const statsParams = [agent_id];
+    let paramCount = 1;
+
+    if (status) {
+      paramCount++;
+      statsQuery += ` AND t.status = $${paramCount}`;
+      statsParams.push(status);
+    }
+
+    if (start_date) {
+      paramCount++;
+      statsQuery += ` AND t.created_at >= $${paramCount}`;
+      statsParams.push(start_date);
+    }
+
+    if (end_date) {
+      paramCount++;
+      statsQuery += ` AND t.created_at <= $${paramCount}`;
+      statsParams.push(end_date);
+    }
+
+    statsQuery += ` GROUP BY t.status`;
+
+    const { rows: statsRows } = await client.query(statsQuery, statsParams);
+
+    // Volume et gains par devise
+    const volumeByCurrencyQuery = `
+      SELECT 
+        c.code as currency_code,
+        c.symbol as currency_symbol,
+        COALESCE(SUM(t.send_amount), 0) as total_volume,
+        COUNT(t.id) as transaction_count,
+        COALESCE(SUM(g.gain_amount), 0) as total_commissions
+      FROM transactions t
+      JOIN countries fc ON t.from_country_id = fc.id
+      JOIN currencies c ON fc.currency_id = c.id
+      LEFT JOIN gains g ON t.id = g.transaction_id
+      WHERE t.assigned_agent_id = $1 AND t.status = 'effectuee'
+      GROUP BY c.code, c.symbol
+      ORDER BY total_volume DESC
+    `;
+
+    const { rows: volumeRows } = await client.query(volumeByCurrencyQuery, [agent_id]);
+
+    // Récupérer les soldes par devise
+    const balanceQuery = `
+      SELECT 
+        c.id as currency_id,
+        c.code as currency_code,
+        c.name as currency_name,
+        c.symbol as currency_symbol,
+        COALESCE(b.amount, 0) as balance
+      FROM currencies c
+      LEFT JOIN balances b ON c.id = b.currency_id AND b.agent_id = $1
+      WHERE c.is_active = true
+      ORDER BY c.code
+    `;
+
+    const { rows: balanceRows } = await client.query(balanceQuery, [agent_id]);
+
+    console.log('💰 Soldes par devise récupérés:', balanceRows);
+    console.log('📈 Volume par devise:', volumeRows);
+
+    // Calculer les totaux
+    const totals = {
+      total_transactions: 0,
+      total_send_amount: 0,
+      total_receive_amount: 0,
+      total_gains: 0,
+      total_volume: 0
+    };
+
+    const statsByStatus = {};
+    
+    statsRows.forEach(row => {
+      statsByStatus[row.status] = {
+        count: parseInt(row.count),
+        total_send_amount: parseFloat(row.total_send_amount),
+        total_receive_amount: parseFloat(row.total_receive_amount),
+        total_gains: parseFloat(row.total_gains)
+      };
+      
+      totals.total_transactions += parseInt(row.count);
+      totals.total_send_amount += parseFloat(row.total_send_amount);
+      totals.total_receive_amount += parseFloat(row.total_receive_amount);
+      totals.total_gains += parseFloat(row.total_gains);
+    });
+
+    // Calculer le volume total
+    totals.total_volume = volumeRows.reduce((total, row) => {
+      return total + parseFloat(row.total_volume);
+    }, 0);
+
+    // Performance (taux de réussite)
+    const successRate = totals.total_transactions > 0 
+      ? ((statsByStatus['effectuee']?.count || 0) / totals.total_transactions * 100).toFixed(1)
+      : 0;
+
+    console.log('✅ Statistiques agent calculées:', { 
+      agent_id, 
+      total_transactions: totals.total_transactions,
+      total_volume: totals.total_volume,
+      total_commissions: totals.total_gains,
+      success_rate: successRate,
+      balances_count: balanceRows.length
+    });
+
+    return {
+      agent_id,
+      by_status: statsByStatus,
+      totals,
+      volume_by_currency: volumeRows,
+      performance: {
+        success_rate: parseFloat(successRate),
+        total_gains: totals.total_gains,
+        total_volume: totals.total_volume
+      },
+      current_balance: balanceRows
+    };
+  } catch (err) {
+    console.error('❌ Erreur statistiques agent:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// =========================
+// Récupérer l'historique des gains d'un agent
+// =========================
+export const getAgentGainsHistory = async (agent_id, {
+  page = 1,
+  limit = 10,
+  start_date = null,
+  end_date = null
+} = {}) => {
+  const client = await pool.connect();
+  try {
+    const offset = (page - 1) * limit;
+    
+    console.log('💰 Historique gains agent:', { agent_id, page, limit });
+
+    let query = `
+      SELECT 
+        g.*,
+        t.tracking_code,
+        t.send_amount,
+        t.receive_amount,
+        t.created_at as transaction_date,
+        c.code as currency_code,
+        c.symbol as currency_symbol,
+        fc.name as from_country_name,
+        tc.name as to_country_name
+      FROM gains g
+      JOIN transactions t ON g.transaction_id = t.id
+      JOIN currencies c ON g.currency_id = c.id
+      JOIN countries fc ON t.from_country_id = fc.id
+      JOIN countries tc ON t.to_country_id = tc.id
+      WHERE g.agent_id = $1
+    `;
+    
+    const params = [agent_id];
+    let paramCount = 1;
+
+    if (start_date) {
+      paramCount++;
+      query += ` AND g.created_at >= $${paramCount}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      paramCount++;
+      query += ` AND g.created_at <= $${paramCount}`;
+      params.push(end_date);
+    }
+
+    query += ` ORDER BY g.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(limit, offset);
+
+    const { rows } = await client.query(query, params);
+
+    // Compter le total
+    let countQuery = `SELECT COUNT(*) FROM gains WHERE agent_id = $1`;
+    const countParams = [agent_id];
+    let countParamCount = 1;
+
+    if (start_date) {
+      countParamCount++;
+      countQuery += ` AND created_at >= $${countParamCount}`;
+      countParams.push(start_date);
+    }
+
+    if (end_date) {
+      countParamCount++;
+      countQuery += ` AND created_at <= $${countParamCount}`;
+      countParams.push(end_date);
+    }
+
+    const countResult = await client.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0].count);
+
+    // Calculer le total des gains
+    let totalQuery = `SELECT COALESCE(SUM(gain_amount), 0) as total FROM gains WHERE agent_id = $1`;
+    const totalParams = [agent_id];
+    let totalParamCount = 1;
+
+    if (start_date) {
+      totalParamCount++;
+      totalQuery += ` AND created_at >= $${totalParamCount}`;
+      totalParams.push(start_date);
+    }
+
+    if (end_date) {
+      totalParamCount++;
+      totalQuery += ` AND created_at <= $${totalParamCount}`;
+      totalParams.push(end_date);
+    }
+
+    const totalResult = await client.query(totalQuery, totalParams);
+    const total_gains = parseFloat(totalResult.rows[0].total);
+
+    console.log(`✅ ${rows.length} gains trouvés pour l'agent ${agent_id}`);
+
+    return {
+      gains: rows.map(gain => ({
+        ...gain,
+        gain_amount: parseFloat(gain.gain_amount),
+        send_amount: parseFloat(gain.send_amount),
+        receive_amount: parseFloat(gain.receive_amount)
+      })),
+      summary: {
+        total_gains,
+        total_count: total
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    };
+  } catch (err) {
+    console.error('❌ Erreur historique gains:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// Les autres fonctions restent inchangées...
 export const getTransactionStats = async (filters = {}) => {
   const client = await pool.connect();
   try {
@@ -1357,12 +1659,15 @@ export const redirectTransaction = async ({
 // =========================
 // Accepter une redirection
 // =========================
+// =========================
+// Accepter une redirection
+// =========================
 export const acceptRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    console.log('🔄 Acceptation redirection:', { redirection_id, agent_id, actor: actor.role });
+    console.log('🔄 [REDIRECT] Acceptation redirection:', { redirection_id, agent_id, actor: actor.role });
 
     const { rows: redirRows } = await client.query(
       `SELECT * FROM redirections WHERE id = $1 FOR UPDATE`,
@@ -1380,7 +1685,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     }
 
     if (redir.to_agent_id !== agent_id) {
-      throw new Error("Cet agent n'est pas autorisé à accepter");
+      throw new Error("Cet agent n'est pas autorisé à accepter cette redirection");
     }
 
     // Récupérer transaction AVEC FOR UPDATE
@@ -1389,18 +1694,31 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
       [redir.transaction_id]
     );
     
+    if (!trxRows.length) {
+      throw new Error('Transaction introuvable');
+    }
+    
     const trx = trxRows[0];
 
-    // Vérifier la devise
-    const { rows: cr } = await client.query(
-      `SELECT currency_id FROM payment_methods WHERE id = $1`,
-      [trx.receiver_method_id]
+    // Récupérer la devise
+    const currencyRes = await client.query(
+      `SELECT fc.currency_id, c.code as currency_code 
+       FROM transactions t
+       JOIN countries fc ON t.from_country_id = fc.id
+       JOIN currencies c ON fc.currency_id = c.id
+       WHERE t.id = $1`,
+      [redir.transaction_id]
     );
     
-    const currency_id = cr[0].currency_id;
+    if (!currencyRes.rows.length) {
+      throw new Error('Devise introuvable pour la transaction');
+    }
+    
+    const { currency_id, currency_code } = currencyRes.rows[0];
 
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
 
+    // Si la transaction est déjà effectuée, transférer les fonds
     if (trx.status === 'effectuee') {
       // Retirer de l'ancien agent
       await client.query(
@@ -1459,7 +1777,8 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
         transaction_id: trx.id,
         from_agent_id: redir.from_agent_id,
         to_agent_id: redir.to_agent_id,
-        redirected_amount: redir.redirected_amount
+        redirected_amount: redir.redirected_amount,
+        currency: currency_code
       }
     }, client);
 
@@ -1491,11 +1810,11 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     }
 
     await client.query('COMMIT');
-    console.log('✅ Redirection acceptée:', redirection_id);
+    console.log('✅ [REDIRECT] Redirection acceptée:', redirection_id);
     return acceptedRedirection;
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('❌ Erreur acceptation redirection:', err);
+    console.error('❌ [REDIRECT] Erreur acceptation redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -1510,7 +1829,7 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
   try {
     await client.query('BEGIN');
 
-    console.log('🔄 Rejet redirection:', { redirection_id, agent_id, actor: actor.role });
+    console.log('🔄 [REDIRECT] Rejet redirection:', { redirection_id, agent_id, actor: actor.role });
 
     const { rows } = await client.query(
       `UPDATE redirections
@@ -1575,11 +1894,11 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
     }
 
     await client.query('COMMIT');
-    console.log('✅ Redirection rejetée:', redirection_id);
+    console.log('✅ [REDIRECT] Redirection rejetée:', redirection_id);
     return rejectedRedirection;
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('❌ Erreur rejet redirection:', err);
+    console.error('❌ [REDIRECT] Erreur rejet redirection:', err);
     throw err;
   } finally {
     client.release();
@@ -1628,289 +1947,6 @@ export const expireOldTransactions = async () => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Erreur nettoyage transactions:', err);
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
-// =========================
-// Récupérer les statistiques d'un agent spécifique - VERSION CORRIGÉE
-// =========================
-export const getAgentStats = async (agent_id, filters = {}) => {
-  const client = await pool.connect();
-  try {
-    const {
-      start_date = null,
-      end_date = null,
-      status = null
-    } = filters;
-
-    console.log('📊 Statistiques agent:', { agent_id, filters });
-
-    // Statistiques par statut
-    let statsQuery = `
-      SELECT 
-        status,
-        COUNT(*) as count,
-        COALESCE(SUM(send_amount), 0) as total_send_amount,
-        COALESCE(SUM(receive_amount), 0) as total_receive_amount,
-        COALESCE(SUM(g.gain_amount), 0) as total_gains
-      FROM transactions t
-      LEFT JOIN gains g ON t.id = g.transaction_id
-      WHERE t.assigned_agent_id = $1
-    `;
-    
-    const statsParams = [agent_id];
-    let paramCount = 1;
-
-    if (status) {
-      paramCount++;
-      statsQuery += ` AND t.status = $${paramCount}`;
-      statsParams.push(status);
-    }
-
-    if (start_date) {
-      paramCount++;
-      statsQuery += ` AND t.created_at >= $${paramCount}`;
-      statsParams.push(start_date);
-    }
-
-    if (end_date) {
-      paramCount++;
-      statsQuery += ` AND t.created_at <= $${paramCount}`;
-      statsParams.push(end_date);
-    }
-
-    statsQuery += ` GROUP BY t.status`;
-
-    const { rows: statsRows } = await client.query(statsQuery, statsParams);
-
-    // Total des gains (seulement pour les transactions effectuées)
-    const gainsQuery = `
-      SELECT 
-        COALESCE(SUM(g.gain_amount), 0) as total_gains,
-        COUNT(DISTINCT g.transaction_id) as transactions_with_gains,
-        c.code as currency_code,
-        c.symbol as currency_symbol
-      FROM gains g
-      JOIN transactions t ON g.transaction_id = t.id
-      JOIN payment_methods pm ON t.receiver_method_id = pm.id
-      JOIN currencies c ON pm.currency_id = c.id
-      WHERE g.agent_id = $1
-      GROUP BY c.code, c.symbol
-    `;
-
-    const { rows: gainsRows } = await client.query(gainsQuery, [agent_id]);
-
-    // Transactions récentes (7 derniers jours)
-    const recentQuery = `
-      SELECT 
-        COUNT(*) as recent_count,
-        COALESCE(SUM(send_amount), 0) as recent_send_amount
-      FROM transactions 
-      WHERE assigned_agent_id = $1 
-        AND created_at >= NOW() - INTERVAL '7 days'
-        AND status = 'effectuee'
-    `;
-
-    const { rows: recentRows } = await client.query(recentQuery, [agent_id]);
-
-    // Récupérer les soldes par devise - REQUÊTE CORRIGÉE
-    const balanceQuery = `
-      SELECT 
-        c.id as currency_id,
-        c.code as currency_code,
-        c.name as currency_name,
-        c.symbol as currency_symbol,
-        COALESCE(b.amount, 0) as balance
-      FROM currencies c
-      LEFT JOIN balances b ON c.id = b.currency_id AND b.agent_id = $1
-      WHERE c.is_active = true
-      ORDER BY c.code
-    `;
-
-    const { rows: balanceRows } = await client.query(balanceQuery, [agent_id]);
-
-    console.log('💰 Soldes par devise récupérés:', balanceRows);
-
-    // Calculer les totaux
-    const totals = {
-      total_transactions: 0,
-      total_send_amount: 0,
-      total_receive_amount: 0,
-      total_gains: 0
-    };
-
-    const statsByStatus = {};
-    
-    statsRows.forEach(row => {
-      statsByStatus[row.status] = {
-        count: parseInt(row.count),
-        total_send_amount: parseFloat(row.total_send_amount),
-        total_receive_amount: parseFloat(row.total_receive_amount),
-        total_gains: parseFloat(row.total_gains)
-      };
-      
-      totals.total_transactions += parseInt(row.count);
-      totals.total_send_amount += parseFloat(row.total_send_amount);
-      totals.total_receive_amount += parseFloat(row.total_receive_amount);
-      totals.total_gains += parseFloat(row.total_gains);
-    });
-
-    // Performance (taux de réussite)
-    const successRate = totals.total_transactions > 0 
-      ? ((statsByStatus['effectuee']?.count || 0) / totals.total_transactions * 100).toFixed(1)
-      : 0;
-
-    console.log('✅ Statistiques agent calculées:', { 
-      agent_id, 
-      total_transactions: totals.total_transactions,
-      success_rate: successRate,
-      balances_count: balanceRows.length
-    });
-
-    return {
-      agent_id,
-      by_status: statsByStatus,
-      totals,
-      gains_by_currency: gainsRows,
-      recent_performance: {
-        last_7_days: {
-          transactions: parseInt(recentRows[0]?.recent_count || 0),
-          amount: parseFloat(recentRows[0]?.recent_send_amount || 0)
-        }
-      },
-      performance: {
-        success_rate: parseFloat(successRate),
-        total_gains: totals.total_gains
-      },
-      current_balance: balanceRows // Soldes par devise retournés ici
-    };
-  } catch (err) {
-    console.error('❌ Erreur statistiques agent:', err);
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
-// =========================
-// Récupérer l'historique des gains d'un agent
-// =========================
-export const getAgentGainsHistory = async (agent_id, {
-  page = 1,
-  limit = 10,
-  start_date = null,
-  end_date = null
-} = {}) => {
-  const client = await pool.connect();
-  try {
-    const offset = (page - 1) * limit;
-    
-    console.log('💰 Historique gains agent:', { agent_id, page, limit });
-
-    let query = `
-      SELECT 
-        g.*,
-        t.tracking_code,
-        t.send_amount,
-        t.receive_amount,
-        t.created_at as transaction_date,
-        c.code as currency_code,
-        c.symbol as currency_symbol,
-        fc.name as from_country_name,
-        tc.name as to_country_name
-      FROM gains g
-      JOIN transactions t ON g.transaction_id = t.id
-      JOIN currencies c ON g.currency_id = c.id
-      JOIN countries fc ON t.from_country_id = fc.id
-      JOIN countries tc ON t.to_country_id = tc.id
-      WHERE g.agent_id = $1
-    `;
-    
-    const params = [agent_id];
-    let paramCount = 1;
-
-    if (start_date) {
-      paramCount++;
-      query += ` AND g.created_at >= $${paramCount}`;
-      params.push(start_date);
-    }
-
-    if (end_date) {
-      paramCount++;
-      query += ` AND g.created_at <= $${paramCount}`;
-      params.push(end_date);
-    }
-
-    query += ` ORDER BY g.created_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
-    params.push(limit, offset);
-
-    const { rows } = await client.query(query, params);
-
-    // Compter le total
-    let countQuery = `SELECT COUNT(*) FROM gains WHERE agent_id = $1`;
-    const countParams = [agent_id];
-    let countParamCount = 1;
-
-    if (start_date) {
-      countParamCount++;
-      countQuery += ` AND created_at >= $${countParamCount}`;
-      countParams.push(start_date);
-    }
-
-    if (end_date) {
-      countParamCount++;
-      countQuery += ` AND created_at <= $${countParamCount}`;
-      countParams.push(end_date);
-    }
-
-    const countResult = await client.query(countQuery, countParams);
-    const total = parseInt(countResult.rows[0].count);
-
-    // Calculer le total des gains
-    let totalQuery = `SELECT COALESCE(SUM(gain_amount), 0) as total FROM gains WHERE agent_id = $1`;
-    const totalParams = [agent_id];
-    let totalParamCount = 1;
-
-    if (start_date) {
-      totalParamCount++;
-      totalQuery += ` AND created_at >= $${totalParamCount}`;
-      totalParams.push(start_date);
-    }
-
-    if (end_date) {
-      totalParamCount++;
-      totalQuery += ` AND created_at <= $${totalParamCount}`;
-      totalParams.push(end_date);
-    }
-
-    const totalResult = await client.query(totalQuery, totalParams);
-    const total_gains = parseFloat(totalResult.rows[0].total);
-
-    console.log(`✅ ${rows.length} gains trouvés pour l'agent ${agent_id}`);
-
-    return {
-      gains: rows.map(gain => ({
-        ...gain,
-        gain_amount: parseFloat(gain.gain_amount),
-        send_amount: parseFloat(gain.send_amount),
-        receive_amount: parseFloat(gain.receive_amount)
-      })),
-      summary: {
-        total_gains,
-        total_count: total
-      },
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    };
-  } catch (err) {
-    console.error('❌ Erreur historique gains:', err);
     throw err;
   } finally {
     client.release();
