@@ -7,7 +7,7 @@ export default function TrackingForm() {
   const [searchResult, setSearchResult] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Données simulées pour les pays
+  // Données simulées pour les pays avec mapping des devises
   const countries = [
     { id: 'Russie', name: 'Russie', currency: 'RUB', currencySymbol: '₽' },
     { id: 'Côte d\'Ivoire', name: 'Côte d\'Ivoire', currency: 'XOF', currencySymbol: 'CFA' },
@@ -18,19 +18,44 @@ export default function TrackingForm() {
     { id: 'Gabon', name: 'Gabon', currency: 'XAF', currencySymbol: 'FCFA' }
   ];
 
-  const getCountryByCode = (code) => {
-    return countries.find(country => country.id === code);
+  // Fonction pour mapper les devises basée sur le code de devise
+  const getCurrencyByCode = (currencyCode) => {
+    const currencyMap = {
+      'RUB': { currency: 'RUB', currencySymbol: '₽' },
+      'XOF': { currency: 'XOF', currencySymbol: 'CFA' },
+      'XAF': { currency: 'XAF', currencySymbol: 'FCFA' },
+      'EUR': { currency: 'EUR', currencySymbol: '€' },
+      'USD': { currency: 'USD', currencySymbol: '$' }
+    };
+    return currencyMap[currencyCode] || { currency: currencyCode, currencySymbol: '' };
   };
 
-  const formatCurrency = (amount, currency) => {
-    return new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: currency
+  const formatCurrency = (amount, currency, currencySymbol) => {
+    if (!amount) return 'Non spécifié';
+    
+    // Formater le nombre avec séparateurs de milliers
+    const formattedAmount = new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(amount);
+    
+    return `${formattedAmount} ${currencySymbol}`;
+  };
+
+  // Fonction pour convertir le statut du backend vers le frontend
+  const getFormattedStatus = (status) => {
+    const statusMap = {
+      'en_attente': 'En attente',
+      'effectuee': 'Effectuée',
+      'echouee': 'Échouée',
+      'expiree': 'Expirée'
+    };
+    return statusMap[status] || status;
   };
 
   const getStatusIcon = (status) => {
-    switch (status) {
+    const formattedStatus = getFormattedStatus(status);
+    switch (formattedStatus) {
       case 'En attente':
         return <Clock className="h-8 w-8 text-yellow-600" />;
       case 'Effectuée':
@@ -45,7 +70,8 @@ export default function TrackingForm() {
   };
 
   const getStatusColor = (status) => {
-    switch (status) {
+    const formattedStatus = getFormattedStatus(status);
+    switch (formattedStatus) {
       case 'En attente':
         return 'yellow';
       case 'Effectuée':
@@ -68,12 +94,20 @@ export default function TrackingForm() {
     
     try {
       const res = await api.get(`/transactions/tracking/${trackingCode}`);
+      console.log('🔍 Résultat API:', res.data); // Pour debug
       setSearchResult(res.data);
     } catch (err) {
+      console.error('❌ Erreur recherche:', err);
       setSearchResult('not_found');
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // Fonction pour formater la date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Non spécifié';
+    return new Date(dateString).toLocaleString('fr-FR');
   };
 
   return (
@@ -91,7 +125,7 @@ export default function TrackingForm() {
               type="text"
               value={trackingCode}
               onChange={(e) => setTrackingCode(e.target.value)}
-              placeholder="Entrez votre code de suivi (ex: TRF123ABC456)"
+              placeholder="Entrez votre code de suivi (ex: TRX12345678)"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
             />
@@ -132,23 +166,23 @@ export default function TrackingForm() {
           ) : (
             <div>
               {/* Status Header */}
-              <div className={`bg-${getStatusColor(searchResult.status)}-50 px-6 py-4 border-b border-${getStatusColor(searchResult.status)}-200`}>
+              <div className={`bg-${getStatusColor(searchResult.data?.status)}-50 px-6 py-4 border-b border-${getStatusColor(searchResult.data?.status)}-200`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    {getStatusIcon(searchResult.status)}
+                    {getStatusIcon(searchResult.data?.status)}
                     <div>
                       <h5 className="text-lg font-semibold text-gray-900">
-                        {searchResult.status}
+                        {getFormattedStatus(searchResult.data?.status)}
                       </h5>
                       <p className="text-sm text-gray-600">
-                        Code: {searchResult.trackingCode || trackingCode}
+                        Code: {searchResult.data?.tracking_code || trackingCode}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">Créée le</p>
                     <p className="text-sm font-medium text-gray-900">
-                      {searchResult.createdAt ? new Date(searchResult.createdAt).toLocaleString('fr-FR') : new Date().toLocaleString('fr-FR')}
+                      {formatDate(searchResult.data?.created_at)}
                     </p>
                   </div>
                 </div>
@@ -163,15 +197,27 @@ export default function TrackingForm() {
                       <User className="h-4 w-4 text-blue-600 mr-2" />
                       Expéditeur
                     </h6>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium">{searchResult.country_from || 'Non spécifié'}</p>
+                        <p className="font-medium">{searchResult.data?.from_country_name || 'Non spécifié'}</p>
                       </div>
                       <div>
-                        <span className="text-xs text-gray-500 uppercase tracking-wide">Montant</span>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
+                        <p className="font-medium">{searchResult.data?.sender_phone || 'Non spécifié'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de paiement</span>
+                        <p className="font-medium">{searchResult.data?.sender_method_name || 'Non spécifié'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Montant envoyé</span>
                         <p className="font-medium">
-                          {searchResult.amount ? formatCurrency(searchResult.amount, getCountryByCode(searchResult.country_from)?.currency || '') : 'Non spécifié'}
+                          {formatCurrency(
+                            searchResult.data?.send_amount, 
+                            searchResult.data?.from_currency_code,
+                            searchResult.data?.from_currency_symbol
+                          )}
                         </p>
                       </div>
                     </div>
@@ -183,23 +229,51 @@ export default function TrackingForm() {
                       <User className="h-4 w-4 text-green-600 mr-2" />
                       Bénéficiaire
                     </h6>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium">{searchResult.country_to || 'Non spécifié'}</p>
+                        <p className="font-medium">{searchResult.data?.to_country_name || 'Non spécifié'}</p>
                       </div>
                       <div>
-                        <span className="text-xs text-gray-500 uppercase tracking-wide">Montant reçu</span>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
+                        <p className="font-medium">{searchResult.data?.receiver_phone || 'Non spécifié'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de réception</span>
+                        <p className="font-medium">{searchResult.data?.receiver_method_name || 'Non spécifié'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Montant à recevoir</span>
                         <p className="font-medium text-green-600">
-                          {searchResult.amount ? formatCurrency(searchResult.amount, getCountryByCode(searchResult.country_to)?.currency || '') : 'Non spécifié'}
+                          {formatCurrency(
+                            searchResult.data?.receive_amount, 
+                            searchResult.data?.to_currency_code,
+                            searchResult.data?.to_currency_symbol
+                          )}
                         </p>
                       </div>
                     </div>
                   </div>
                 </div>
 
+                {/* Informations supplémentaires */}
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Taux appliqué</span>
+                    <p className="font-medium">{searchResult.data?.rate_applied ? `1 → ${searchResult.data.rate_applied}` : 'Non spécifié'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Commission</span>
+                    <p className="font-medium">{searchResult.data?.commission_applied ? `${searchResult.data.commission_applied}%` : 'Non spécifié'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Numéro autorisé</span>
+                    <p className="font-medium">{searchResult.data?.authorized_number || 'Non spécifié'}</p>
+                  </div>
+                </div>
+
                 {/* Status Messages */}
-                {searchResult.status === 'En attente' && (
+                {searchResult.data?.status === 'en_attente' && (
                   <div className="mt-6 bg-yellow-50 rounded-lg p-4">
                     <h6 className="font-semibold text-yellow-800 mb-3 flex items-center">
                       <Clock className="h-4 w-4 mr-2" />
@@ -208,10 +282,15 @@ export default function TrackingForm() {
                     <p className="text-sm text-yellow-700">
                       Votre transaction est en attente de confirmation. L'agent procédera au transfert une fois le paiement reçu.
                     </p>
+                    {searchResult.data?.expires_at && (
+                      <p className="text-sm text-yellow-600 mt-2">
+                        ⏰ Expire le: {formatDate(searchResult.data.expires_at)}
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {searchResult.status === 'Effectuée' && (
+                {searchResult.data?.status === 'effectuee' && (
                   <div className="mt-6 bg-green-50 rounded-lg p-4">
                     <h6 className="font-semibold text-green-800 mb-3 flex items-center">
                       <CheckCircle className="h-4 w-4 mr-2" />
@@ -220,10 +299,15 @@ export default function TrackingForm() {
                     <p className="text-sm text-green-700">
                       Le bénéficiaire a reçu les fonds avec succès.
                     </p>
+                    {searchResult.data?.completed_at && (
+                      <p className="text-sm text-green-600 mt-2">
+                        ✅ Complétée le: {formatDate(searchResult.data.completed_at)}
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {searchResult.status === 'Échouée' && (
+                {searchResult.data?.status === 'echouee' && (
                   <div className="mt-6 bg-red-50 rounded-lg p-4">
                     <h6 className="font-semibold text-red-800 mb-3 flex items-center">
                       <XCircle className="h-4 w-4 mr-2" />
@@ -235,7 +319,7 @@ export default function TrackingForm() {
                   </div>
                 )}
 
-                {searchResult.status === 'Expirée' && (
+                {searchResult.data?.status === 'expiree' && (
                   <div className="mt-6 bg-gray-50 rounded-lg p-4">
                     <h6 className="font-semibold text-gray-800 mb-3 flex items-center">
                       <AlertCircle className="h-4 w-4 mr-2" />
@@ -243,18 +327,6 @@ export default function TrackingForm() {
                     </h6>
                     <p className="text-sm text-gray-700">
                       Le délai de paiement a expiré. Créez une nouvelle transaction si nécessaire.
-                    </p>
-                  </div>
-                )}
-
-                {searchResult.status === 'Inexistante' && (
-                  <div className="mt-6 bg-red-50 rounded-lg p-4">
-                    <h6 className="font-semibold text-red-800 mb-3 flex items-center">
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Transaction Non Trouvée
-                    </h6>
-                    <p className="text-sm text-red-700">
-                      Aucune transaction correspondante n'a été trouvée. Vérifiez le code de suivi.
                     </p>
                   </div>
                 )}
