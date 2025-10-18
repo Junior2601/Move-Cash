@@ -16,19 +16,16 @@ export default function HomePage() {
   const carouselSlides = [
     {
       id: 1,
-      image: heroImage,
       title: "Transférez de l'argent dans le monde",
       subtitle: "Rapide, sécurisé et sans création de compte"
     },
     {
       id: 2,
-      image: heroImage, // Vous pouvez utiliser une image différente
       title: "Des transferts instantanés",
       subtitle: "Recevez votre argent en quelques minutes seulement"
     },
     {
       id: 3,
-      image: heroImage, // Vous pouvez utiliser une image différente
       title: "Des taux compétitifs",
       subtitle: "Les meilleurs taux de change pour vos transferts"
     }
@@ -215,8 +212,8 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Section Hero avec Carousel */}
-      <header className="relative h-96 md:h-[500px] overflow-hidden">
+      {/* Section Hero avec Carousel - Fond bleu */}
+      <header className="relative h-96 md:h-[500px] overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800">
         {/* Conteneur du carousel */}
         <div className="relative w-full h-full">
           {carouselSlides.map((slide, index) => (
@@ -226,13 +223,10 @@ export default function HomePage() {
                 index === currentSlide ? 'opacity-100' : 'opacity-0'
               }`}
             >
-              {/* Image de fond */}
-              <div
-                className="w-full h-full bg-cover bg-center bg-no-repeat"
-                style={{ backgroundImage: `url(${slide.image})` }}
-              >
-                {/* Overlay pour améliorer la lisibilité */}
-                <div className="absolute inset-0 bg-black bg-opacity-50"></div>
+              {/* Fond bleu avec dégradé */}
+              <div className="w-full h-full">
+                {/* Overlay léger pour améliorer la lisibilité */}
+                <div className="absolute inset-0 bg-blue-900 bg-opacity-20"></div>
                 
                 {/* Contenu du slide */}
                 <div className="relative h-full flex items-center justify-center text-center">
@@ -240,7 +234,7 @@ export default function HomePage() {
                     <h1 className="text-3xl md:text-5xl font-bold mb-4 text-white animate-fade-in">
                       {slide.title}
                     </h1>
-                    <p className="text-lg md:text-xl text-gray-200 animate-fade-in-up">
+                    <p className="text-lg md:text-xl text-blue-100 animate-fade-in-up">
                       {slide.subtitle}
                     </p>
                   </div>
