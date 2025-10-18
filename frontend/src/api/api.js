@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_BASE = 'http://localhost:5000/api';
+export const API_BASE = 'https://api.movecah.online/api';
 
 const api = axios.create({
   baseURL: API_BASE,
