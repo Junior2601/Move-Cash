@@ -51,7 +51,7 @@ app.use('/api/transactions', transactionRoutes);
 
 
 // Démarrer le service
-cleanupService.start(5); // 5 minutes
+cleanupService.start(3); // 5 minutes
 // Pour tester immédiatement :
 cleanupService.runCleanup().then(console.log);
 

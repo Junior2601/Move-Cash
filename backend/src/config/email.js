@@ -11,7 +11,14 @@ export const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER, // adresse email
     pass: process.env.SMTP_PASS  // mot de passe / app password
-  }
+  },
+
+  connectionTimeout: 10000, // 10 secondes
+  socketTimeout: 35000,     // 35 secondes
+  greetingTimeout: 5000,    // 5 secondes
+  pool: true,               // Réutiliser les connexions
+  maxConnections: 5,
+  maxMessages: 100
 });
 
 // Vérifier la config au démarrage

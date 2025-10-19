@@ -192,8 +192,8 @@ export const createTransaction = async ({
     const tracking_code = 'TRX' + Date.now().toString().slice(-8) + Math.random().toString(36).substr(2, 5).toUpperCase();
     console.log('📦 Tracking code généré:', tracking_code);
 
-    // 5. Commission fixe (0.5%)
-    const commission_applied = 0.5;
+    // 5. Commission fixe (0.75%)
+    const commission_applied = 0.75;
 
     // 6. CORRECTION FUSEAU HORAIRE : Insérer transaction avec UTC
     console.log('💾 Insertion transaction en base (UTC)...');
@@ -208,7 +208,7 @@ export const createTransaction = async ({
         status, assigned_agent_id, authorized_number_id,
         expires_at,
         client_validated
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, (NOW() AT TIME ZONE 'UTC') + INTERVAL '13 minutes', $15)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, (NOW() AT TIME ZONE 'UTC') + INTERVAL '5 minutes', $15)
       RETURNING *`,
       [
         tracking_code,
@@ -231,7 +231,7 @@ export const createTransaction = async ({
       created_at: transaction.created_at,
       expires_at: transaction.expires_at,
       server_now_utc: new Date().toISOString(),
-      expected_duration: '13 minutes'
+      expected_duration: '05 minutes'
     });
 
     // 🔎 Log de création de transaction
