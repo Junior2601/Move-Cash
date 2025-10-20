@@ -1,4 +1,3 @@
-// src/controllers/transaction.controller.js
 import { 
   createTransaction,
   findAllTransactions,
@@ -18,7 +17,7 @@ import {
 import { pool } from '../config/db.js';
 
 // =========================
-// Dashboard agent - VERSION CORRIGÉE
+// Dashboard agent - VERSION AVEC API GAINS
 // =========================
 export const getAgentDashboardController = async (req, res) => {
   try {
@@ -59,38 +58,53 @@ export const getAgentDashboardController = async (req, res) => {
       return total + parseFloat(balance.balance || 0);
     }, 0);
 
-    // CORRECTION: Récupérer le volume total des transactions par devise pour le mois en cours
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const startOfMonth = `${currentMonth}-01`;
-    const today = new Date().toISOString().split('T')[0];
+    // NOUVEAU: Récupérer les gains du mois en cours par devise
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
     
-    // Requête pour récupérer le volume des transactions groupées par devise
+    const monthlyGainsByCurrency = await pool.query(
+      `SELECT 
+          c.id as currency_id,
+          c.code as currency_code,
+          c.name as currency_name,
+          c.symbol as currency_symbol,
+          COALESCE(SUM(g.gain_amount), 0) as total_commissions,
+          COUNT(g.id) as number_of_transactions
+       FROM gains g
+       JOIN currencies c ON g.currency_id = c.id
+       WHERE g.agent_id = $1 
+         AND EXTRACT(YEAR FROM g.created_at) = $2
+         AND EXTRACT(MONTH FROM g.created_at) = $3
+       GROUP BY c.id, c.code, c.name, c.symbol
+       ORDER BY total_commissions DESC`,
+      [agent_id, currentYear, currentMonth]
+    );
+
+    // Récupérer le volume des transactions du mois par devise
     const monthlyVolumeByCurrency = await pool.query(
       `SELECT 
           c.code as currency_code,
           c.symbol as currency_symbol,
           COALESCE(SUM(t.send_amount), 0) as total_volume,
-          COUNT(t.id) as transaction_count,
-          COALESCE(SUM(g.gain_amount), 0) as total_commissions
+          COUNT(t.id) as transaction_count
        FROM transactions t
        JOIN countries fc ON t.from_country_id = fc.id
        JOIN currencies c ON fc.currency_id = c.id
-       LEFT JOIN gains g ON t.id = g.transaction_id AND g.agent_id = $1
        WHERE t.assigned_agent_id = $1 
          AND t.status = 'effectuee'
-         AND t.created_at >= $2
-         AND t.created_at <= $3
+         AND EXTRACT(YEAR FROM t.created_at) = $2
+         AND EXTRACT(MONTH FROM t.created_at) = $3
        GROUP BY c.code, c.symbol
        ORDER BY total_volume DESC`,
-      [agent_id, startOfMonth, today]
+      [agent_id, currentYear, currentMonth]
     );
 
-    // Calcul du total des commissions du mois
-    const monthlyCommissions = monthlyVolumeByCurrency.rows.reduce((total, row) => {
+    // Calculer les totaux
+    const monthlyCommissions = monthlyGainsByCurrency.rows.reduce((total, row) => {
       return total + parseFloat(row.total_commissions);
     }, 0);
 
-    // Calcul du volume total des transactions du mois
     const monthlyVolume = monthlyVolumeByCurrency.rows.reduce((total, row) => {
       return total + parseFloat(row.total_volume);
     }, 0);
@@ -101,12 +115,43 @@ export const getAgentDashboardController = async (req, res) => {
        FROM transactions 
        WHERE assigned_agent_id = $1 
          AND status = 'effectuee'
-         AND created_at >= $2
-         AND created_at <= $3`,
-      [agent_id, startOfMonth, today]
+         AND EXTRACT(YEAR FROM created_at) = $2
+         AND EXTRACT(MONTH FROM created_at) = $3`,
+      [agent_id, currentYear, currentMonth]
     );
 
     const monthlyTransactionCount = parseInt(monthlyTransactionsRes.rows[0]?.count || 0);
+
+    // Combiner les données de volume et de commissions
+    const combinedMonthlyData = monthlyVolumeByCurrency.rows.map(volumeItem => {
+      const gainItem = monthlyGainsByCurrency.rows.find(gain => 
+        gain.currency_code === volumeItem.currency_code
+      );
+      
+      return {
+        currency_code: volumeItem.currency_code,
+        currency_symbol: volumeItem.currency_symbol,
+        total_volume: parseFloat(volumeItem.total_volume),
+        total_commissions: gainItem ? parseFloat(gainItem.total_commissions) : 0,
+        transaction_count: parseInt(volumeItem.transaction_count)
+      };
+    });
+
+    // Ajouter les devises qui ont des gains mais pas de volume (cas rare)
+    monthlyGainsByCurrency.rows.forEach(gainItem => {
+      const exists = combinedMonthlyData.find(item => 
+        item.currency_code === gainItem.currency_code
+      );
+      if (!exists) {
+        combinedMonthlyData.push({
+          currency_code: gainItem.currency_code,
+          currency_symbol: gainItem.currency_symbol,
+          total_volume: 0,
+          total_commissions: parseFloat(gainItem.total_commissions),
+          transaction_count: parseInt(gainItem.number_of_transactions)
+        });
+      }
+    });
 
     res.json({
       success: true,
@@ -116,10 +161,11 @@ export const getAgentDashboardController = async (req, res) => {
         pending: pendingCount,
         completed: completedCount,
         failed: failedCount,
-        monthly_earnings: monthlyCommissions, // Commissions du mois
+        monthly_earnings: monthlyCommissions, // Commissions du mois depuis la table gains
         monthly_volume: monthlyVolume, // Volume total des transactions
         monthly_transactions: monthlyTransactionCount,
-        monthly_volume_by_currency: monthlyVolumeByCurrency.rows, // Volume par devise
+        monthly_volume_by_currency: combinedMonthlyData, // Données combinées volume + commissions
+        monthly_commissions_by_currency: monthlyGainsByCurrency.rows, // Commissions par devise
         recent_transactions: recentTransactions.transactions,
         balances_by_currency: balancesByCurrency,
         agent_info: agentCheck.rows[0]

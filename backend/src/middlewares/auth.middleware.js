@@ -44,3 +44,25 @@ export const verifyAgentToken = (req, res, next) => {
     next();
   });
 };
+
+// NOUVEAU : Middleware admin OU agent
+export const verifyAdminOrAgentToken = (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ message: 'Accès refusé. Token manquant.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    if (decoded.role !== 'admin' && decoded.role !== 'agent') {
+      return res.status(403).json({ message: 'Accès refusé. Rôle non autorisé.' });
+    }
+    
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Token invalide.' });
+  }
+};

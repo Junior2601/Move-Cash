@@ -6,6 +6,7 @@ export default function ServiceClient() {
     { id: 1, country: "Ismaël Brevie", phone: "+7 927 353-16-12", available: true },
     { id: 2, country: "Marie Colombe", phone: "+225 07 87 044 546", available: true },
     { id: 3, country: "Israel", phone: "+7 (980) 319-71-62", available: true },
+    { id: 4, country: "Max Koffi", phone: "+7 (999) 178-41-38", available: true },
     // { id: 4, country: "Sénégal", phone: "+221 7 08 15 23", available: true },
   ];
 

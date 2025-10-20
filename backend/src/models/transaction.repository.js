@@ -77,67 +77,104 @@ export const createTransaction = async ({
     const receive_amount = send_amount * rate_applied;
     console.log('💰 Calcul montant:', `${send_amount} × ${rate_applied} = ${receive_amount}`);
 
-    // 3. Choisir un agent + numéro autorisé (avec fallback amélioré)
-    console.log('🔍 Recherche agent disponible...');
+    // 3. Choisir un agent + numéro autorisé (sélection optimisée avec répartition)
+    console.log('🔍 Recherche agent disponible (sélection optimisée)...');
     console.log('📋 Critères recherche:', {
       country_id: from_country_id,
       payment_method_id: sender_method_id
     });
 
-    let numRes = await client.query(
-      `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+    // D'abord, compter combien d'agents sont disponibles avec les critères exacts
+    const countRes = await client.query(
+      `SELECT COUNT(*) as total_agents
        FROM authorized_numbers an
        JOIN agents a ON an.agent_id = a.id
        WHERE an.country_id = $1
          AND an.payment_method_id = $2
          AND an.is_active = true
-         AND a.is_active = true
-       LIMIT 1`,
+         AND a.is_active = true`,
       [from_country_id, sender_method_id]
     );
 
-    console.log('🔍 Résultat recherche agent (critères exacts):', {
-      trouvé: numRes.rows.length > 0,
-      nombre_resultats: numRes.rows.length,
-      details: numRes.rows
-    });
+    const totalAgents = parseInt(countRes.rows[0]?.total_agents || 0);
+    console.log(`📊 ${totalAgents} agents disponibles pour les critères exacts`);
 
-    // Fallback 1: Chercher par pays seulement (même méthode de paiement différente)
-    if (numRes.rows.length === 0) {
-      console.log('🔄 Fallback 1: Recherche par pays seulement...');
-      numRes = await client.query(
-        `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+    let numRes;
+    let query;
+    let params = [from_country_id, sender_method_id];
+
+    if (totalAgents > 0) {
+      // Si plusieurs agents, choisir aléatoirement parmi ceux disponibles
+      query = `
+        SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+        FROM authorized_numbers an
+        JOIN agents a ON an.agent_id = a.id
+        WHERE an.country_id = $1
+          AND an.payment_method_id = $2
+          AND an.is_active = true
+          AND a.is_active = true
+        ORDER BY RANDOM()
+        LIMIT 1
+      `;
+      console.log('🎯 Sélection aléatoire parmi les agents correspondants');
+    } else {
+      // Fallback: chercher par pays seulement
+      console.log('🔄 Aucun agent trouvé avec critères exacts, recherche par pays...');
+      
+      // Compter les agents disponibles pour le pays
+      const countryCountRes = await client.query(
+        `SELECT COUNT(*) as total_agents
          FROM authorized_numbers an
          JOIN agents a ON an.agent_id = a.id
          WHERE an.country_id = $1
            AND an.is_active = true
-           AND a.is_active = true
-         LIMIT 1`,
+           AND a.is_active = true`,
         [from_country_id]
       );
       
-      console.log('🔍 Résultat fallback 1 (pays seulement):', {
-        trouvé: numRes.rows.length > 0,
-        nombre_resultats: numRes.rows.length
-      });
+      const countryAgents = parseInt(countryCountRes.rows[0]?.total_agents || 0);
+      console.log(`📊 ${countryAgents} agents disponibles pour le pays`);
+      
+      query = `
+        SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+        FROM authorized_numbers an
+        JOIN agents a ON an.agent_id = a.id
+        WHERE an.country_id = $1
+          AND an.is_active = true
+          AND a.is_active = true
+        ORDER BY RANDOM()
+        LIMIT 1
+      `;
+      params = [from_country_id];
     }
 
-    // Fallback 2: Chercher n'importe quel agent actif
+    numRes = await client.query(query, params);
+
+    // Fallback final: n'importe quel agent actif
     if (numRes.rows.length === 0) {
-      console.log('🔄 Fallback 2: Recherche d\'un agent actif quelconque...');
+      console.log('🔄 Fallback final: recherche d\'un agent actif quelconque...');
+      
+      // Compter tous les agents actifs disponibles
+      const anyCountRes = await client.query(
+        `SELECT COUNT(*) as total_agents
+         FROM authorized_numbers an
+         JOIN agents a ON an.agent_id = a.id
+         WHERE an.is_active = true
+           AND a.is_active = true`
+      );
+      
+      const anyAgents = parseInt(anyCountRes.rows[0]?.total_agents || 0);
+      console.log(`📊 ${anyAgents} agents actifs disponibles dans le système`);
+      
       numRes = await client.query(
         `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
          FROM authorized_numbers an
          JOIN agents a ON an.agent_id = a.id
          WHERE an.is_active = true
            AND a.is_active = true
+         ORDER BY RANDOM()
          LIMIT 1`
       );
-      
-      console.log('🔍 Résultat fallback 2 (agent quelconque):', {
-        trouvé: numRes.rows.length > 0,
-        nombre_resultats: numRes.rows.length
-      });
     }
 
     // Si toujours aucun agent trouvé, fournir des détails de debug
@@ -185,7 +222,9 @@ export const createTransaction = async ({
       agent_id: assigned_agent_id, 
       agent_name, 
       authorized_number,
-      authorized_number_id 
+      authorized_number_id,
+      selection_method: totalAgents > 0 ? 'critères_exacts_aléatoire' : 
+                       numRes.rows[0] ? 'fallback_pays_aléatoire' : 'fallback_general_aléatoire'
     });
 
     // 4. Générer un tracking code aléatoire
@@ -249,7 +288,8 @@ export const createTransaction = async ({
         receive_amount,
         rate_applied,
         tracking_code,
-        agent_id: assigned_agent_id
+        agent_id: assigned_agent_id,
+        selection_method: totalAgents > 0 ? 'critères_exacts_aléatoire' : 'fallback_aléatoire'
       }
     }, client);
 
@@ -450,7 +490,7 @@ export const clientValidateTransaction = async (transaction_id) => {
 };
 
 // =========================
-// Valider une transaction agent ou admin - VERSION CORRIGÉE
+// Valider une transaction agent ou admin - VERSION CORRIGÉE AVEC GAINS CUMULATIFS
 // =========================
 export const validateTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
@@ -487,24 +527,36 @@ export const validateTransaction = async (transaction_id, actor) => {
       [transaction_id]
     );
 
-    // Récupérer la devise de l'agent (devise du pays d'envoi)
-    const currencyRes = await client.query(
+    // Récupérer les devises des pays d'envoi et de réception
+    const currenciesRes = await client.query(
       `SELECT 
-          fc.currency_id,
-          c.code as currency_code,
-          c.symbol as currency_symbol
+          fc.currency_id as from_currency_id,
+          tc.currency_id as to_currency_id,
+          from_curr.code as from_currency_code,
+          from_curr.symbol as from_currency_symbol,
+          to_curr.code as to_currency_code,
+          to_curr.symbol as to_currency_symbol
        FROM transactions t
        JOIN countries fc ON t.from_country_id = fc.id
-       JOIN currencies c ON fc.currency_id = c.id
+       JOIN countries tc ON t.to_country_id = tc.id
+       JOIN currencies from_curr ON fc.currency_id = from_curr.id
+       JOIN currencies to_curr ON tc.currency_id = to_curr.id
        WHERE t.id = $1`,
       [transaction_id]
     );
     
-    if (currencyRes.rows.length === 0) {
-      throw new Error('Devise introuvable pour le pays d\'envoi');
+    if (currenciesRes.rows.length === 0) {
+      throw new Error('Devises introuvables pour les pays d\'envoi et réception');
     }
     
-    const { currency_id, currency_code, currency_symbol } = currencyRes.rows[0];
+    const { 
+      from_currency_id, 
+      to_currency_id, 
+      from_currency_code, 
+      to_currency_code,
+      from_currency_symbol,
+      to_currency_symbol
+    } = currenciesRes.rows[0];
 
     // Calcul du gain en fonction du montant d'envoi (dans la devise d'envoi)
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
@@ -512,58 +564,142 @@ export const validateTransaction = async (transaction_id, actor) => {
       send_amount: trx.send_amount,
       commission_percent: trx.commission_applied,
       gain_amount: gain_amount,
-      currency: currency_code
+      currency: from_currency_code
     });
 
-    // CORRECTION : Insérer dans la table gains
-    await client.query(
-      `INSERT INTO gains (transaction_id, agent_id, currency_id, gain_amount, commission_percent_applied)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [transaction_id, trx.assigned_agent_id, currency_id, gain_amount, trx.commission_applied]
+    // ===========================================
+    // GESTION DES GAINS CUMULATIFS
+    // ===========================================
+
+    // Vérifier s'il existe déjà un gain pour cet agent et cette devise
+    const existingGainRes = await client.query(
+      `SELECT id, gain_amount FROM gains 
+       WHERE agent_id = $1 AND currency_id = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [trx.assigned_agent_id, from_currency_id]
     );
 
-    // CORRECTION : Créditer la balance de l'agent avec le MONTANT TOTAL de la transaction
+    let total_gain_amount = gain_amount;
+    let is_new_gain = true;
+
+    if (existingGainRes.rows.length > 0) {
+      // Accumuler sur le gain existant
+      const existingGain = existingGainRes.rows[0];
+      total_gain_amount = parseFloat(existingGain.gain_amount) + gain_amount;
+      
+      await client.query(
+        `UPDATE gains 
+         SET gain_amount = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [total_gain_amount, existingGain.id]
+      );
+      
+      is_new_gain = false;
+      console.log('💰 Gain accumulé sur gain existant:', {
+        existing_gain_id: existingGain.id,
+        previous_amount: parseFloat(existingGain.gain_amount),
+        new_gain: gain_amount,
+        total_gain: total_gain_amount,
+        currency: from_currency_code
+      });
+    } else {
+      // Créer un nouveau gain
+      await client.query(
+        `INSERT INTO gains (transaction_id, agent_id, currency_id, gain_amount, commission_percent_applied)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [transaction_id, trx.assigned_agent_id, from_currency_id, gain_amount, trx.commission_applied]
+      );
+      console.log('💰 Nouveau gain créé:', {
+        gain_amount: gain_amount,
+        currency: from_currency_code
+      });
+    }
+
+    // ===========================================
+    // DOUBLE MOUVEMENT DE BALANCE - CORRECTION
+    // ===========================================
+
+    // 1. CRÉDITER la balance dans la devise d'ENVOI (montant envoyé)
     await client.query(
       `INSERT INTO balances (agent_id, currency_id, amount)
        VALUES ($1, $2, $3)
        ON CONFLICT (agent_id, currency_id)
        DO UPDATE SET amount = balances.amount + $3, last_updated = NOW()`,
-      [trx.assigned_agent_id, currency_id, trx.send_amount]
+      [trx.assigned_agent_id, from_currency_id, trx.send_amount]
     );
 
-    console.log('✅ Balance créditée:', {
+    console.log('✅ Balance CRÉDITÉE (devise envoi):', {
       agent_id: trx.assigned_agent_id,
-      currency_id: currency_id,
+      currency_id: from_currency_id,
+      currency_code: from_currency_code,
       amount_added: trx.send_amount,
-      currency: currency_code,
-      commission_gain: gain_amount
+      type: 'CRÉDIT'
     });
 
-    // 🔎 Log de validation de transaction
+    // 2. DÉBITER la balance dans la devise de RÉCEPTION (montant à recevoir)
+    await client.query(
+      `INSERT INTO balances (agent_id, currency_id, amount)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (agent_id, currency_id)
+       DO UPDATE SET amount = balances.amount - $3, last_updated = NOW()`,
+      [trx.assigned_agent_id, to_currency_id, trx.receive_amount]
+    );
+
+    console.log('✅ Balance DÉBITÉE (devise réception):', {
+      agent_id: trx.assigned_agent_id,
+      currency_id: to_currency_id,
+      currency_code: to_currency_code,
+      amount_subtracted: trx.receive_amount,
+      type: 'DÉBIT'
+    });
+
+    // 🔎 Log de validation de transaction avec double mouvement et gains cumulatifs
     await logHistory({
       action_type: 'transaction_validated',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
-      description: `Transaction validée - Montant: ${trx.send_amount} ${currency_code}, Gain: ${gain_amount} ${currency_code}, Code: ${trx.tracking_code}`,
+      description: `Transaction validée - Envoi: ${trx.send_amount} ${from_currency_code}, Réception: ${trx.receive_amount} ${to_currency_code}, Gain: ${gain_amount} ${from_currency_code} (${is_new_gain ? 'nouveau' : 'accumulé'})`,
       metadata: { 
         agent_id: trx.assigned_agent_id,
-        transaction_amount: trx.send_amount,
-        gain_amount,
+        transaction_amount_send: trx.send_amount,
+        transaction_amount_receive: trx.receive_amount,
+        gain_amount: gain_amount,
+        total_gain_amount: total_gain_amount,
         commission_percent: trx.commission_applied,
-        currency: currency_code,
-        validated_by: actor.id
+        from_currency: from_currency_code,
+        to_currency: to_currency_code,
+        validated_by: actor.id,
+        gain_accumulated: !is_new_gain,
+        balance_movements: {
+          credit: {
+            currency: from_currency_code,
+            amount: trx.send_amount
+          },
+          debit: {
+            currency: to_currency_code,
+            amount: trx.receive_amount
+          }
+        }
       }
     }, client);
 
     await client.query('COMMIT');
-    console.log('✅ Transaction validée avec succès:', transaction_id);
+    console.log('✅ Transaction validée avec double mouvement de balance et gains cumulatifs:', transaction_id);
     return { 
       message: 'Transaction validée avec succès',
-      transaction_amount: trx.send_amount,
-      gain_amount,
-      currency: currency_code
+      transaction_amount_send: trx.send_amount,
+      transaction_amount_receive: trx.receive_amount,
+      gain_amount: gain_amount,
+      total_gain_amount: total_gain_amount,
+      from_currency: from_currency_code,
+      to_currency: to_currency_code,
+      gain_accumulated: !is_new_gain,
+      balance_movements: {
+        credited: `${from_currency_symbol}${trx.send_amount} ${from_currency_code}`,
+        debited: `${to_currency_symbol}${trx.receive_amount} ${to_currency_code}`
+      }
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1656,9 +1792,6 @@ export const redirectTransaction = async ({
   }
 };
 
-// =========================
-// Accepter une redirection
-// =========================
 // =========================
 // Accepter une redirection
 // =========================

@@ -12,7 +12,8 @@ import {
   Eye,
   ShieldAlert,
   User,
-  Euro
+  Euro,
+  Coins
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import useAgentApi from "../../hooks/useAgentApi";
@@ -91,6 +92,27 @@ export default function AgentDashboard() {
     );
   };
 
+  const CommissionBadge = ({ commissions, code, symbol, count }) => {
+    if (parseFloat(commissions || 0) === 0) return null;
+
+    return (
+      <div className="flex items-center justify-between p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+        <div className="flex items-center gap-2">
+          <div className="p-1 bg-green-100 rounded">
+            <Coins className="w-3 h-3 text-green-600" />
+          </div>
+          <span className="font-medium text-green-800 text-sm">{code}</span>
+          <span className="text-xs text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
+            {count} trans.
+          </span>
+        </div>
+        <span className="font-bold text-green-700 text-sm">
+          +{symbol}{parseFloat(commissions || 0).toFixed(2)}
+        </span>
+      </div>
+    );
+  };
+
   const TransactionItem = ({ transaction }) => (
     <div className="flex items-center justify-between p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50/50 transition-colors duration-200">
       <div className="flex items-center gap-3">
@@ -133,11 +155,17 @@ export default function AgentDashboard() {
   const recentTransactions = dashboardData?.recent_transactions || [];
   const balancesByCurrency = dashboardData?.balances_by_currency || [];
   const monthlyVolumeByCurrency = dashboardData?.monthly_volume_by_currency || [];
+  const monthlyCommissionsByCurrency = dashboardData?.monthly_commissions_by_currency || [];
   
   // Filtrer les soldes non nuls
   const nonZeroBalances = balancesByCurrency.filter(balance => 
     parseFloat(balance.balance || 0) > 0
   );
+
+  // Filtrer les commissions non nulles
+  const nonZeroCommissions = monthlyCommissionsByCurrency?.filter(commission => 
+    parseFloat(commission.total_commissions || 0) > 0
+  ) || [];
 
   if (error) {
     return (
@@ -336,8 +364,41 @@ export default function AgentDashboard() {
           </div>
         </div>
 
+        {/* NOUVELLE SECTION: Commissions du mois par devise */}
+        {nonZeroCommissions.length > 0 && (
+          <div className="lg:col-span-1 bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600">
+                <Coins className="w-5 h-5 text-white" />
+              </div>
+              <h3 className="font-semibold text-slate-800">Commissions du Mois</h3>
+            </div>
+            <div className="space-y-3">
+              {nonZeroCommissions.map((commission, index) => (
+                <CommissionBadge
+                  key={index}
+                  commissions={commission.total_commissions}
+                  code={commission.currency_code}
+                  symbol={commission.currency_symbol}
+                  count={commission.number_of_transactions}
+                />
+              ))}
+            </div>
+            <div className="mt-4 pt-3 border-t border-slate-200">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-600">Total commissions</span>
+                <span className="font-bold text-green-600">
+                  +{dashboardData?.monthly_earnings?.toFixed(2) || '0.00'} €
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Transactions récentes */}
-        <div className="lg:col-span-2 bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm">
+        <div className={`bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm ${
+          nonZeroCommissions.length > 0 ? 'lg:col-span-1' : 'lg:col-span-2'
+        }`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600">
