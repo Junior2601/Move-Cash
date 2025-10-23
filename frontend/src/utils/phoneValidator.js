@@ -6,72 +6,84 @@ const PHONE_FORMATS = {
     pattern: /^(0[1-9])(\d{2}){4}$/,
     example: '0612345678',
     length: 10,
+    maxLength: 10,
     description: '10 chiffres commençant par 0'
   },
   '+221': { // Sénégal
     pattern: /^(70|76|77|78)(\d{7})$/,
     example: '701234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 70, 76, 77 ou 78'
   },
   '+225': { // Côte d'Ivoire
-    pattern: /^(07|05)(\d{8})$/,
+    pattern: /^(07|05|01)(\d{8})$/,
     example: '0712345678',
     length: 10,
+    maxLength: 10,
     description: '10 chiffres commençant par 07 ou 05'
   },
   '+229': { // Bénin
     pattern: /^(6[0-9])(\d{7})$/,
     example: '601234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 6'
   },
   '+226': { // Burkina Faso
     pattern: /^(7[0-9])(\d{7})$/,
     example: '701234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 7'
   },
   '+223': { // Mali
     pattern: /^(6|7)(\d{8})$/,
     example: '601234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 6 ou 7'
   },
   '+224': { // Guinée
     pattern: /^(6[0-2])(\d{7})$/,
     example: '601234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 60, 61 ou 62'
   },
   '+228': { // Togo
     pattern: /^(9[0-9])(\d{7})$/,
     example: '901234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 9'
   },
   '+212': { // Maroc
     pattern: /^(6|7)(\d{8})$/,
     example: '612345678',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 6 ou 7'
   },
   '+213': { // Algérie
     pattern: /^(5|6|7)(\d{8})$/,
     example: '551234567',
     length: 9,
+    maxLength: 9,
     description: '9 chiffres commençant par 5, 6 ou 7'
   },
   '+216': { // Tunisie
     pattern: /^[2-9](\d{7})$/,
     example: '20123456',
     length: 8,
+    maxLength: 8,
     description: '8 chiffres commençant par 2-9'
   },
   '+7': { // Russie
     pattern: /^(9[0-9])(\d{8})$/,
     example: '9920123456',
     length: 10,
+    maxLength: 10,
     description: '10 chiffres commençant par 90'
   },
   // Format par défaut pour les pays non listés
@@ -79,6 +91,7 @@ const PHONE_FORMATS = {
     pattern: /^[0-9]{8,15}$/,
     example: '123456789',
     length: '8-15',
+    maxLength: 15,
     description: '8 à 15 chiffres'
   }
 };
@@ -106,7 +119,8 @@ export const validatePhoneNumber = (phone, countryCode = null, phonePrefix = nul
       isValid: false,
       message: 'Le numéro de téléphone est requis',
       examples: [],
-      formatted: ''
+      formatted: '',
+      maxLength: 15
     };
   }
 
@@ -133,20 +147,22 @@ export const validatePhoneNumber = (phone, countryCode = null, phonePrefix = nul
       isValid: false,
       message: 'Le numéro ne doit contenir que des chiffres',
       examples: [format.example],
-      formatted: cleanedPhone
+      formatted: cleanedPhone,
+      maxLength: format.maxLength
     };
   }
 
   // Validation de la longueur
   const minLength = typeof format.length === 'string' ? 8 : format.length;
-  const maxLength = typeof format.length === 'string' ? 15 : format.length;
+  const maxLength = format.maxLength;
   
   if (cleanedPhone.length < minLength || cleanedPhone.length > maxLength) {
     return {
       isValid: false,
       message: `Le numéro doit contenir ${format.length} chiffres`,
       examples: [format.example],
-      formatted: cleanedPhone
+      formatted: cleanedPhone,
+      maxLength: format.maxLength
     };
   }
 
@@ -156,7 +172,8 @@ export const validatePhoneNumber = (phone, countryCode = null, phonePrefix = nul
       isValid: false,
       message: `Format invalide. ${format.description}`,
       examples: [format.example],
-      formatted: cleanedPhone
+      formatted: cleanedPhone,
+      maxLength: format.maxLength
     };
   }
 
@@ -164,7 +181,8 @@ export const validatePhoneNumber = (phone, countryCode = null, phonePrefix = nul
     isValid: true,
     message: 'Format valide',
     examples: [format.example],
-    formatted: cleanedPhone
+    formatted: cleanedPhone,
+    maxLength: format.maxLength
   };
 };
 
