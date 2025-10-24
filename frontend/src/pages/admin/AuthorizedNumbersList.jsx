@@ -102,7 +102,7 @@ export default function AuthorizedNumbersList() {
   const fetchNumbers = async () => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:5000/api/numero_autorise", {
+      const res = await fetch("https://api.movecah.online/api/numero_autorise", {
         headers: { 
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
@@ -136,7 +136,7 @@ export default function AuthorizedNumbersList() {
   // Charger les pays
   const fetchCountries = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/country", {
+      const res = await fetch("https://api.movecah.online/api/country", {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -151,7 +151,7 @@ export default function AuthorizedNumbersList() {
   // Charger les agents
   const fetchAgents = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/agent", {
+      const res = await fetch("https://api.movecah.online/api/agent", {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -166,7 +166,7 @@ export default function AuthorizedNumbersList() {
   // Charger les moyens de paiement
   const fetchPaymentMethods = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/payment_method", {
+      const res = await fetch("https://api.movecah.online/api/payment_method", {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -224,8 +224,8 @@ export default function AuthorizedNumbersList() {
 
     try {
       const url = form.id
-        ? `http://localhost:5000/api/numero_autorise/${form.id}`
-        : "http://localhost:5000/api/numero_autorise";
+        ? `https://api.movecah.online/api/numero_autorise/${form.id}`
+        : "https://api.movecah.online/api/numero_autorise";
 
       const method = form.id ? "PUT" : "POST";
 
@@ -272,7 +272,7 @@ export default function AuthorizedNumbersList() {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce numéro autorisé ?")) return;
     
     try {
-      const res = await fetch(`http://localhost:5000/api/numero_autorise/${id}`, {
+      const res = await fetch(`https://api.movecah.online/api/numero_autorise/${id}`, {
         method: "DELETE",
         headers: { 
           Authorization: `Bearer ${token}`,

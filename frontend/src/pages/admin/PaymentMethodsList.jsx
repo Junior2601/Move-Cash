@@ -25,7 +25,7 @@ export default function PaymentMethodsList() {
   // Charger tous les moyens de paiement avec les relations
   const fetchMethods = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/payment_method", {
+      const res = await fetch("https://api.movecah.online/api/payment_method", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -38,7 +38,7 @@ export default function PaymentMethodsList() {
   // Charger la liste des pays
   const fetchCountries = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/country", {
+      const res = await fetch("https://api.movecah.online/api/country", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -51,7 +51,7 @@ export default function PaymentMethodsList() {
   // Charger la liste des devises
   const fetchCurrencies = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/currency", {
+      const res = await fetch("https://api.movecah.online/api/currency", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -93,8 +93,8 @@ export default function PaymentMethodsList() {
     e.preventDefault();
     try {
       const url = form.id
-        ? `http://localhost:5000/api/payment_method/${form.id}`
-        : "http://localhost:5000/api/payment_method";
+        ? `https://api.movecah.online/api/payment_method/${form.id}`
+        : "https://api.movecah.online/api/payment_method";
 
       const method = form.id ? "PUT" : "POST";
 
@@ -130,7 +130,7 @@ export default function PaymentMethodsList() {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce moyen de paiement ?")) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/payment_method/${id}`, {
+      const response = await fetch(`https://api.movecah.online/api/payment_method/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });

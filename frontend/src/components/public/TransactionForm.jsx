@@ -25,11 +25,19 @@ const CountrySelect = ({
     ? countries.filter(c => c.id !== parseInt(excludeCountryId))
     : countries;
 
-  // Fonction pour obtenir l'URL du drapeau
-  const getCountryFlag = (countryCode) => {
-    if (!countryCode) return '../public/flags/default.png';
-    const code = countryCode.toLowerCase();
-    return `../public/flags/${code}.png`;
+  // Fonction pour obtenir l'URL du drapeau basée sur le nom du pays
+  const getCountryFlag = (countryName) => {
+    if (!countryName) return '/flags/default.png';
+    
+    // Nettoyer le nom du pays pour créer un nom de fichier valide
+    const cleanName = countryName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
+      .replace(/\s+/g, '-') // Remplacer les espaces par des tirets
+      .replace(/[^a-z0-9-]/g, ''); // Supprimer les caractères spéciaux
+    
+    return `/flags/${cleanName}.png`;
   };
 
   return (
@@ -45,7 +53,7 @@ const CountrySelect = ({
           {selectedCountry ? (
             <>
               <img 
-                src={getCountryFlag(selectedCountry.code)} 
+                src={getCountryFlag(selectedCountry.name)} 
                 alt={`Drapeau ${selectedCountry.name}`}
                 className="w-6 h-4 object-cover rounded-sm"
                 onError={(e) => {
@@ -83,7 +91,7 @@ const CountrySelect = ({
                 }`}
               >
                 <img 
-                  src={getCountryFlag(country.code)} 
+                  src={getCountryFlag(country.name)} 
                   alt={`Drapeau ${country.name}`}
                   className="w-6 h-4 object-cover rounded-sm"
                   onError={(e) => {
@@ -121,23 +129,21 @@ const PaymentMethodSelect = ({
 
   // Fonction pour obtenir l'URL de l'image du moyen de paiement
   const getPaymentMethodImage = (methodName) => {
-    if (!methodName) return '../public/payment-methods/default.png';
+    if (!methodName) return '/payment-methods/default.png';
     
     const methodMap = {
-      'orange money': '../public/payment-methods/orange-money.png',
-      'mtn money': '../public/payment-methods/mtn-money.png',
-      'wave': '../public/payment-methods/wave.png',
-      'airtel money': '../public/payment-methods/airtel-money.png',
-      'momo': '../public/payment-methods/momo.png',
-      'alpha bank': '../public/payment-methods/alpha-bank.png',
-      'sberbank': '../public/payment-methods/sberbank.png',
-      // 'carte bancaire': '../public/payment-methods/credit-card.png',
-      // 'virement bancaire': '../public/payment-methods/bank-transfer.png',
-      'tinkoff': '../public/payment-methods/tinkoff.png'
+      'orange money': '/payment-methods/orange-money.png',
+      'mtn money': '/payment-methods/mtn-money.png',
+      'wave': '/payment-methods/wave.png',
+      'airtel money': '/payment-methods/airtel-money.png',
+      'momo': '/payment-methods/momo.png',
+      'alpha bank': '/payment-methods/alpha-bank.png',
+      'sberbank': '/payment-methods/sberbank.png',
+      'tinkoff': '/payment-methods/tinkoff.png'
     };
     
     const normalizedName = methodName.toLowerCase();
-    return methodMap[normalizedName] || `../public/payment-methods/${normalizedName.replace(/\s+/g, '-')}.png`;
+    return methodMap[normalizedName] || `/payment-methods/${normalizedName.replace(/\s+/g, '-')}.png`;
   };
 
   return (
@@ -239,15 +245,19 @@ export default function TransactionForm({ onTransactionComplete }) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   
-  // États pour la validation en temps réel
+  // États pour la validation en temps réel - CORRIGÉ
   const [phoneValidation, setPhoneValidation] = useState({
-    sender: { isValid: false, message: '', examples: [], touched: false, maxLength: 15 },
-    receiver: { isValid: false, message: '', examples: [], touched: false, maxLength: 15 }
+    sender: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 },
+    receiver: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 }
   });
 
   const navigate = useNavigate();
 
-  // [Toutes les autres fonctions restent identiques...]
+  // Fonction pour réessayer le chargement
+  const handleRetry = () => {
+    fetchData();
+  };
+
   // Charger les pays et méthodes de paiement
   const fetchData = async () => {
     try {
@@ -311,7 +321,52 @@ export default function TransactionForm({ onTransactionComplete }) {
     fetchData();
   }, []);
 
-  // [Toutes les autres fonctions useEffect et utilitaires restent identiques...]
+  // Validation des numéros de téléphone en temps réel - CORRIGÉ
+  useEffect(() => {
+    if (formData.senderPhone && formData.senderCountryId) {
+      const country = getCountryById(formData.senderCountryId);
+      if (country?.phone_prefix) {
+        const validation = validatePhoneNumber(formData.senderPhone, null, country.phone_prefix);
+        setPhoneValidation(prev => ({
+          ...prev,
+          sender: {
+            ...validation,
+            touched: true,
+            maxLength: validation.maxLength || 15
+          }
+        }));
+      }
+    } else {
+      // Reset à null au lieu de false pour différencier "non validé" de "invalidé"
+      setPhoneValidation(prev => ({
+        ...prev,
+        sender: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 }
+      }));
+    }
+  }, [formData.senderPhone, formData.senderCountryId]);
+
+  useEffect(() => {
+    if (formData.receiverPhone && formData.receiverCountryId) {
+      const country = getCountryById(formData.receiverCountryId);
+      if (country?.phone_prefix) {
+        const validation = validatePhoneNumber(formData.receiverPhone, null, country.phone_prefix);
+        setPhoneValidation(prev => ({
+          ...prev,
+          receiver: {
+            ...validation,
+            touched: true,
+            maxLength: validation.maxLength || 15
+          }
+        }));
+      }
+    } else {
+      // Reset à null au lieu de false
+      setPhoneValidation(prev => ({
+        ...prev,
+        receiver: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 }
+      }));
+    }
+  }, [formData.receiverPhone, formData.receiverCountryId]);
 
   // Fonctions utilitaires
   const getCountryById = (id) => {
@@ -378,8 +433,6 @@ export default function TransactionForm({ onTransactionComplete }) {
       setErrors(prev => ({ ...prev, general: '' }));
     }
   };
-
-  // [Toutes les autres fonctions (calcul taux de change, validation, soumission) restent identiques...]
 
   // Calculer le taux de change
   useEffect(() => {
@@ -517,6 +570,42 @@ export default function TransactionForm({ onTransactionComplete }) {
     return rateMap[pair] || 0.85;
   };
 
+  // Fonction pour vérifier si le formulaire est valide - CORRIGÉE
+  const isFormValid = () => {
+    // Vérifier les champs obligatoires
+    if (!formData.senderCountryId || 
+        !formData.receiverCountryId || 
+        !formData.senderPhone?.trim() || 
+        !formData.receiverPhone?.trim() || 
+        !formData.senderPaymentMethodId || 
+        !formData.receiverPaymentMethodId || 
+        !formData.sentAmount) {
+      return false;
+    }
+
+    // Vérifier le montant
+    const amount = parseFloat(formData.sentAmount);
+    if (isNaN(amount) || amount <= 0 || amount < 1) {
+      return false;
+    }
+
+    // Vérifier que les pays sont différents
+    if (formData.senderCountryId === formData.receiverCountryId) {
+      return false;
+    }
+
+    // Vérifier la validation des numéros de téléphone
+    // Seulement si les champs ont été touchés et validés
+    if (phoneValidation.sender.touched && !phoneValidation.sender.isValid) {
+      return false;
+    }
+    if (phoneValidation.receiver.touched && !phoneValidation.receiver.isValid) {
+      return false;
+    }
+
+    return true;
+  };
+
   const validateForm = () => {
     const newErrors = {};
 
@@ -540,12 +629,12 @@ export default function TransactionForm({ onTransactionComplete }) {
       newErrors.receiverCountryId = 'Le pays de réception doit être différent du pays d\'envoi';
     }
 
-    // Validation des numéros de téléphone
-    if (formData.senderPhone && formData.senderCountryId && !phoneValidation.sender.isValid && phoneValidation.sender.touched) {
+    // Validation des numéros de téléphone - seulement si touchés
+    if (phoneValidation.sender.touched && !phoneValidation.sender.isValid) {
       newErrors.senderPhone = phoneValidation.sender.message;
     }
 
-    if (formData.receiverPhone && formData.receiverCountryId && !phoneValidation.receiver.isValid && phoneValidation.receiver.touched) {
+    if (phoneValidation.receiver.touched && !phoneValidation.receiver.isValid) {
       newErrors.receiverPhone = phoneValidation.receiver.message;
     }
 
@@ -713,8 +802,8 @@ export default function TransactionForm({ onTransactionComplete }) {
     setExchangeRate(0);
     setErrors({});
     setPhoneValidation({
-      sender: { isValid: false, message: '', examples: [], touched: false, maxLength: 15 },
-      receiver: { isValid: false, message: '', examples: [], touched: false, maxLength: 15 }
+      sender: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 },
+      receiver: { isValid: null, message: '', examples: [], touched: false, maxLength: 15 }
     });
   };
 
@@ -836,7 +925,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                       : 'border-gray-300 focus:border-blue-500'
                   } focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20`}
                 />
-                {/* Icône de validation */}
+                {/* Icône de validation AVEC COCHE VERTE */}
                 <div className="absolute right-3 top-3">
                   {phoneValidation.sender.touched && phoneValidation.sender.isValid && (
                     <Check className="h-5 w-5 text-green-500" />
@@ -848,6 +937,11 @@ export default function TransactionForm({ onTransactionComplete }) {
               </div>
               {errors.senderPhone && (
                 <p className="mt-1 text-sm text-red-600">{errors.senderPhone}</p>
+              )}
+              {phoneValidation.sender.touched && !phoneValidation.sender.isValid && formData.senderPhone && (
+                <p className="mt-1 text-sm text-orange-600">
+                  {phoneValidation.sender.message}
+                </p>
               )}
             </div>
 
@@ -943,7 +1037,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                       : 'border-gray-300 focus:border-blue-500'
                   } focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20`}
                 />
-                {/* Icône de validation */}
+                {/* Icône de validation AVEC COCHE VERTE */}
                 <div className="absolute right-3 top-3">
                   {phoneValidation.receiver.touched && phoneValidation.receiver.isValid && (
                     <Check className="h-5 w-5 text-green-500" />
@@ -955,6 +1049,11 @@ export default function TransactionForm({ onTransactionComplete }) {
               </div>
               {errors.receiverPhone && (
                 <p className="mt-1 text-sm text-red-600">{errors.receiverPhone}</p>
+              )}
+              {phoneValidation.receiver.touched && !phoneValidation.receiver.isValid && formData.receiverPhone && (
+                <p className="mt-1 text-sm text-orange-600">
+                  {phoneValidation.receiver.message}
+                </p>
               )}
             </div>
 
@@ -1033,7 +1132,7 @@ export default function TransactionForm({ onTransactionComplete }) {
           </div>
         )}
 
-        {/* Boutons d'action */}
+        {/* Boutons d'action - CORRIGÉ */}
         <div className="flex flex-col sm:flex-row gap-4 pt-4">
           <button
             type="button"
@@ -1046,7 +1145,7 @@ export default function TransactionForm({ onTransactionComplete }) {
           
           <button
             type="submit"
-            disabled={isSubmitting || Object.keys(errors).length > 0 || !phoneValidation.sender.isValid || !phoneValidation.receiver.isValid}
+            disabled={isSubmitting || !isFormValid()}
             className="flex-1 flex items-center justify-center space-x-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
           >
             {isSubmitting ? (
