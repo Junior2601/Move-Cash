@@ -1,10 +1,10 @@
 import axios from 'axios';
 
-export const API_BASE = 'https://api.movecah.online/api';
+export const API_BASE = 'http://localhost:5000/api';
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 45000,
+  timeout: 55000,
 });
 
 api.interceptors.request.use((config) => {

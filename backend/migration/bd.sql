@@ -339,3 +339,7 @@ ADD COLUMN client_validated_at TIMESTAMP;
 --à ajouter dans les pays
 ALTER TABLE countries 
 ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+--à ajouter dans les gains
+ALTER TABLE gains 
+ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;

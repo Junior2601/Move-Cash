@@ -4,7 +4,7 @@ import { sendEmail } from "../services/email.service.js";
 (async () => {
   try {
     await sendEmail({
-      to: "plj63376@gmail.com",
+      to: "pauljunioryao@yandex.com",
       subject: "Test envoi d’email 🚀",
       html: `
         <h1>Bravo 🎉</h1>

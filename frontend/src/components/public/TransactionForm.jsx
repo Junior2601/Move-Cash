@@ -264,17 +264,17 @@ export default function TransactionForm({ onTransactionComplete }) {
       setIsLoading(true);
       setLoadError('');
       
-      console.log('🔄 Chargement des pays...');
+      // console.log('🔄 Chargement des pays...');
       
       let countriesResponse;
       try {
         countriesResponse = await api.get('/country');
-        console.log('✅ Pays chargés via /country:', countriesResponse.data.length);
+        // console.log('✅ Pays chargés via /country:', countriesResponse.data.length);
       } catch (mainError) {
-        console.log('❌ Erreur /country, essai /active...');
+        // console.log('❌ Erreur /country, essai /active...');
         try {
           countriesResponse = await api.get('/country/active');
-          console.log('✅ Pays chargés via /active:', countriesResponse.data.length);
+          // console.log('✅ Pays chargés via /active:', countriesResponse.data.length);
         } catch (activeError) {
           console.error('❌ Les deux endpoints ont échoué:', activeError);
           throw new Error('Impossible de charger la liste des pays');
@@ -288,7 +288,7 @@ export default function TransactionForm({ onTransactionComplete }) {
       setCountries(countriesResponse.data);
 
       // Charger les méthodes de paiement pour chaque pays
-      console.log('🔄 Chargement des méthodes de paiement...');
+      // console.log('🔄 Chargement des méthodes de paiement...');
       const methodsByCountry = {};
       const countryIds = countriesResponse.data.map(country => country.id);
       
@@ -439,7 +439,7 @@ export default function TransactionForm({ onTransactionComplete }) {
     if (formData.sentAmount && formData.sentAmount > 0 && formData.senderCountryId && formData.receiverCountryId) {
       const calculateExchangeRate = async () => {
         try {
-          console.log('🔄 Calcul du taux de change...');
+          // console.log('🔄 Calcul du taux de change...');
           
           const senderCountry = getCountryById(formData.senderCountryId);
           const receiverCountry = getCountryById(formData.receiverCountryId);
@@ -452,32 +452,32 @@ export default function TransactionForm({ onTransactionComplete }) {
             return;
           }
 
-          console.log('💱 Pays sélectionnés:', {
-            from: senderCountry.name,
-            to: receiverCountry.name,
-            from_currency: senderCountry.currency_code,
-            to_currency: receiverCountry.currency_code
-          });
+          // console.log('💱 Pays sélectionnés:', {
+          //   from: senderCountry.name,
+          //   to: receiverCountry.name,
+          //   from_currency: senderCountry.currency_code,
+          //   to_currency: receiverCountry.currency_code
+          // });
 
           // ESSAYER LE NOUVEL ENDPOINT COUNTRIES
           try {
-            console.log('🌐 Appel endpoint /rate/countries...');
+            // console.log('🌐 Appel endpoint /rate/countries...');
             const response = await api.get(`/rate/countries/${formData.senderCountryId}/${formData.receiverCountryId}`);
             
             if (response.data && response.data.success && response.data.data) {
               const rate = parseFloat(response.data.data.rate);
-              console.log('✅ Taux de change API (countries):', rate);
+              // console.log('✅ Taux de change API (countries):', rate);
               setExchangeRate(rate);
               setReceivedAmount(formData.sentAmount * rate);
               return;
             }
           } catch (countriesError) {
-            console.warn('⚠️ Endpoint /rate/countries non disponible:', countriesError.message);
+            // console.warn('⚠️ Endpoint /rate/countries non disponible:', countriesError.message);
           }
 
           // ESSAYER L'ENDPOINT ACTIVE RATES (fallback)
           try {
-            console.log('🌐 Appel endpoint /rate/active...');
+            // console.log('🌐 Appel endpoint /rate/active...');
             const activeRatesResponse = await api.get('/rate/active');
             
             if (activeRatesResponse.data && Array.isArray(activeRatesResponse.data)) {
@@ -489,7 +489,7 @@ export default function TransactionForm({ onTransactionComplete }) {
               
               if (rateData && rateData.rate) {
                 const rate = parseFloat(rateData.rate);
-                console.log('✅ Taux de change trouvé dans /active:', rate);
+                // console.log('✅ Taux de change trouvé dans /active:', rate);
                 setExchangeRate(rate);
                 setReceivedAmount(formData.sentAmount * rate);
                 return;
@@ -501,7 +501,7 @@ export default function TransactionForm({ onTransactionComplete }) {
 
           // ESSAYER L'ENDPOINT GÉNÉRIQUE
           try {
-            console.log('🌐 Appel endpoint /rate...');
+            // console.log('🌐 Appel endpoint /rate...');
             const genericResponse = await api.get('/rate', {
               params: {
                 from_country: formData.senderCountryId,
@@ -511,7 +511,7 @@ export default function TransactionForm({ onTransactionComplete }) {
             
             if (genericResponse.data && genericResponse.data.success && genericResponse.data.data) {
               const rate = parseFloat(genericResponse.data.data.rate);
-              console.log('✅ Taux de change API (générique):', rate);
+              // console.log('✅ Taux de change API (générique):', rate);
               setExchangeRate(rate);
               setReceivedAmount(formData.sentAmount * rate);
               return;
@@ -522,7 +522,7 @@ export default function TransactionForm({ onTransactionComplete }) {
           
           // TAUX PAR DÉFAUT
           const defaultRate = getDefaultExchangeRate(senderCountry, receiverCountry);
-          console.log('💰 Taux par défaut appliqué:', defaultRate);
+          // console.log('💰 Taux par défaut appliqué:', defaultRate);
           setExchangeRate(defaultRate);
           setReceivedAmount(formData.sentAmount * defaultRate);
           
@@ -646,7 +646,7 @@ export default function TransactionForm({ onTransactionComplete }) {
     e.preventDefault();
     
     if (!validateForm()) {
-      console.log('❌ Validation échouée:', errors);
+      // console.log('❌ Validation échouée:', errors);
       return;
     }
 
@@ -672,11 +672,11 @@ export default function TransactionForm({ onTransactionComplete }) {
         send_amount: parseFloat(formData.sentAmount)
       };
 
-      console.log('📤 Envoi transaction:', transactionData);
+      // console.log('📤 Envoi transaction:', transactionData);
 
       const res = await api.post('/transactions', transactionData);
       
-      console.log('✅ Réponse transaction:', res.data);
+      // console.log('✅ Réponse transaction:', res.data);
 
       // REDIRECTION VERS LA PAGE DE DÉTAIL AVEC ID CHIFFRÉ
       if (res.data.data?.id) {
@@ -684,7 +684,7 @@ export default function TransactionForm({ onTransactionComplete }) {
         const encryptedId = encryptId(transactionId);
         
         if (encryptedId) {
-          console.log('🎯 Redirection vers transaction chiffrée:', { id: transactionId, encrypted: encryptedId });
+          // console.log('🎯 Redirection vers transaction chiffrée:', { id: transactionId, encrypted: encryptedId });
           navigate(`/transaction/${encryptedId}`);
         } else {
           console.error('❌ Erreur de chiffrement, redirection sans chiffrement');

@@ -7,6 +7,7 @@ import './config/server-config.js';
 import { cleanupService } from './services/cleanup.service.js';
 
 
+
 // Routes
 import adminRoutes from './routes/admin.routes.js';
 import agentRoutes from './routes/agent.routes.js';
@@ -21,6 +22,7 @@ import gainRoutes from "./routes/gain.routes.js";
 import historyRoutes from './routes/history.routes.js';
 import cleanupRoutes from './routes/cleanup.routes.js';
 import statisticsRoutes from './routes/statistics.routes.js';
+
 
 dotenv.config();
 
@@ -51,7 +53,7 @@ app.use('/api/transactions', transactionRoutes);
 
 
 // Démarrer le service
-cleanupService.start(3); // 5 minutes
+cleanupService.start(2); // 5 minutes
 // Pour tester immédiatement :
 cleanupService.runCleanup().then(console.log);
 
@@ -73,7 +75,7 @@ app.get('/test-db', async (req, res) => {
 
 // Port d’écoute
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`✅ Serveur backend démarré sur le port ${PORT}`);
 });
 

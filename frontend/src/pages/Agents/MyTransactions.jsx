@@ -216,6 +216,29 @@ export default function MyTransactions() {
     );
   };
 
+  // Fonction pour obtenir le badge de validation client
+  const getClientValidationBadge = (transaction) => {
+    if (transaction.client_validated) {
+      return (
+        <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full border border-green-200">
+          <CheckCircle className="w-3 h-3" />
+          Client validé
+        </span>
+      );
+    }
+    
+    if (transaction.status === 'en_attente' || transaction.status === 'pending') {
+      return (
+        <span className="flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full border border-yellow-200">
+          <Clock className="w-3 h-3" />
+          En attente client
+        </span>
+      );
+    }
+    
+    return null;
+  };
+
   // Fonction pour formater le montant avec le bon code de devise
   const formatAmount = (amount, currencyCode) => {
     if (!amount) return "0.00";
@@ -280,7 +303,8 @@ export default function MyTransactions() {
 
   // Vérifier si une transaction peut être validée/annulée
   const canProcessTransaction = (transaction) => {
-    return transaction.status === 'en_attente' || transaction.status === 'pending';
+    const isPending = transaction.status === 'en_attente' || transaction.status === 'pending';
+    return isPending && transaction.client_validated;
   };
 
   // Refresh automatique des données
@@ -434,7 +458,7 @@ export default function MyTransactions() {
                 {transactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-4 sm:px-6 py-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mb-1">
                         <code className="font-mono text-sm text-gray-900 bg-gray-100 px-2 py-1 rounded">
                           {transaction.tracking_code}
                         </code>
@@ -445,8 +469,11 @@ export default function MyTransactions() {
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {transaction.sender_method_name} → {transaction.receiver_method_name}
+                      <div className="flex items-center gap-2">
+                        {getClientValidationBadge(transaction)}
+                        <div className="text-xs text-gray-500">
+                          {transaction.sender_method_name} → {transaction.receiver_method_name}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
@@ -481,7 +508,7 @@ export default function MyTransactions() {
                           Détails
                         </Link>
 
-                        {/* Boutons Valider/Annuler pour les transactions en attente */}
+                        {/* Boutons Valider/Annuler pour les transactions en attente ET validées par le client */}
                         {canProcessTransaction(transaction) && (
                           <>
                             <button
@@ -558,6 +585,9 @@ export default function MyTransactions() {
                             Urgent
                           </span>
                         )}
+                      </div>
+                      <div className="flex items-center gap-2 mb-1">
+                        {getClientValidationBadge(transaction)}
                       </div>
                       <div className="text-sm text-gray-600 font-medium">
                         {formatPhoneNumber(transaction)}

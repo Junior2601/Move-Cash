@@ -6,6 +6,7 @@ import Dashboard from './pages/admin/Dashboard';
 import AgentsList from './pages/admin/AgentsList';
 import AgentDetail from './pages/admin/AgentDetail';
 import CountriesList from './pages/admin/CountriesList';
+import CurrenciesList from './pages/admin/CurrenciesList';
 import RatesList from './pages/admin/RatesList';
 import BalancesList from './pages/admin/BalancesList';
 import AgentsGains from './pages/admin/GainAgent';
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="agents" element={<AgentsList />} />
             <Route path="agents/:id" element={<AgentDetail />} />
             <Route path="countries" element={<CountriesList />} />
+            <Route path="currencies" element={<CurrenciesList />} />
             <Route path="rates" element={<RatesList />} />
             <Route path="balances" element={<BalancesList />} />
             <Route path="agent-gains" element={<AgentsGains />} />

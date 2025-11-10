@@ -8,7 +8,7 @@ import {
 } from "../services/email.service.js";
 
 // =========================
-// Création transaction (publique, client)
+// Création transaction (publique, client) - VERSION AVEC SELECTION OPTIMISEE
 // =========================
 export const createTransaction = async ({
   from_country_id,
@@ -77,14 +77,23 @@ export const createTransaction = async ({
     const receive_amount = send_amount * rate_applied;
     console.log('💰 Calcul montant:', `${send_amount} × ${rate_applied} = ${receive_amount}`);
 
-    // 3. Choisir un agent + numéro autorisé (sélection optimisée avec répartition)
-    console.log('🔍 Recherche agent disponible (sélection optimisée)...');
-    console.log('📋 Critères recherche:', {
-      country_id: from_country_id,
-      payment_method_id: sender_method_id
-    });
+    // 3. NOUVELLE STRATÉGIE DE SÉLECTION : Agent avec le plus de solde dans la devise de réception + aléatoire
+    console.log('🔍 Recherche agent optimale (solde + aléatoire)...');
+    
+    // Récupérer la devise de réception
+    const toCurrencyRes = await client.query(
+      `SELECT currency_id FROM countries WHERE id = $1`,
+      [to_country_id]
+    );
+    
+    if (toCurrencyRes.rows.length === 0) {
+      throw new Error('Pays de réception introuvable');
+    }
+    
+    const to_currency_id = toCurrencyRes.rows[0].currency_id;
+    console.log('💱 Devise de réception:', to_currency_id);
 
-    // D'abord, compter combien d'agents sont disponibles avec les critères exacts
+    // Compter les agents disponibles avec les critères exacts
     const countRes = await client.query(
       `SELECT COUNT(*) as total_agents
        FROM authorized_numbers an
@@ -100,81 +109,121 @@ export const createTransaction = async ({
     console.log(`📊 ${totalAgents} agents disponibles pour les critères exacts`);
 
     let numRes;
-    let query;
-    let params = [from_country_id, sender_method_id];
+    let selectionMethod = '';
 
     if (totalAgents > 0) {
-      // Si plusieurs agents, choisir aléatoirement parmi ceux disponibles
-      query = `
-        SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+      // STRATÉGIE OPTIMISÉE : Sélectionner parmi les 3 agents avec les plus gros soldes
+      console.log('🎯 Sélection parmi les agents avec les meilleurs soldes...');
+      
+      const topAgentsQuery = `
+        SELECT 
+          an.id, 
+          an.agent_id, 
+          an.number, 
+          a.name as agent_name, 
+          a.email as agent_email,
+          COALESCE(b.amount, 0) as balance_amount,
+          ROW_NUMBER() OVER (ORDER BY COALESCE(b.amount, 0) DESC, RANDOM()) as balance_rank
         FROM authorized_numbers an
         JOIN agents a ON an.agent_id = a.id
+        LEFT JOIN balances b ON a.id = b.agent_id AND b.currency_id = $3
         WHERE an.country_id = $1
           AND an.payment_method_id = $2
           AND an.is_active = true
           AND a.is_active = true
-        ORDER BY RANDOM()
-        LIMIT 1
+        ORDER BY COALESCE(b.amount, 0) DESC, RANDOM()
+        LIMIT 3
       `;
-      console.log('🎯 Sélection aléatoire parmi les agents correspondants');
-    } else {
-      // Fallback: chercher par pays seulement
-      console.log('🔄 Aucun agent trouvé avec critères exacts, recherche par pays...');
       
-      // Compter les agents disponibles pour le pays
-      const countryCountRes = await client.query(
-        `SELECT COUNT(*) as total_agents
-         FROM authorized_numbers an
-         JOIN agents a ON an.agent_id = a.id
-         WHERE an.country_id = $1
-           AND an.is_active = true
-           AND a.is_active = true`,
-        [from_country_id]
+      const topAgentsRes = await client.query(topAgentsQuery, [
+        from_country_id, 
+        sender_method_id, 
+        to_currency_id
+      ]);
+      
+      console.log(`📈 ${topAgentsRes.rows.length} meilleurs agents trouvés avec leurs soldes:`, 
+        topAgentsRes.rows.map(agent => ({
+          agent_id: agent.agent_id,
+          agent_name: agent.agent_name,
+          balance: agent.balance_amount,
+          number: agent.number
+        }))
       );
       
-      const countryAgents = parseInt(countryCountRes.rows[0]?.total_agents || 0);
-      console.log(`📊 ${countryAgents} agents disponibles pour le pays`);
+      if (topAgentsRes.rows.length > 0) {
+        // Choisir aléatoirement parmi les 3 meilleurs
+        const randomIndex = Math.floor(Math.random() * topAgentsRes.rows.length);
+        numRes = { rows: [topAgentsRes.rows[randomIndex]] };
+        selectionMethod = 'top3_solde_aleatoire';
+        console.log(`🎲 Sélection aléatoire parmi top ${topAgentsRes.rows.length} agents (index ${randomIndex})`);
+      } else {
+        // Fallback vers la sélection normale
+        numRes = await client.query(
+          `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+           FROM authorized_numbers an
+           JOIN agents a ON an.agent_id = a.id
+           WHERE an.country_id = $1
+             AND an.payment_method_id = $2
+             AND an.is_active = true
+             AND a.is_active = true
+           ORDER BY RANDOM()
+           LIMIT 1`,
+          [from_country_id, sender_method_id]
+        );
+        selectionMethod = 'critères_exacts_aleatoire';
+      }
+    } else {
+      // Fallback: chercher par pays seulement avec stratégie solde
+      console.log('🔄 Aucun agent trouvé avec critères exacts, recherche par pays avec stratégie solde...');
       
-      query = `
-        SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
+      const countryAgentsQuery = `
+        SELECT 
+          an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email,
+          COALESCE(b.amount, 0) as balance_amount
         FROM authorized_numbers an
         JOIN agents a ON an.agent_id = a.id
+        LEFT JOIN balances b ON a.id = b.agent_id AND b.currency_id = $2
         WHERE an.country_id = $1
           AND an.is_active = true
           AND a.is_active = true
-        ORDER BY RANDOM()
-        LIMIT 1
+        ORDER BY COALESCE(b.amount, 0) DESC, RANDOM()
+        LIMIT 3
       `;
-      params = [from_country_id];
-    }
-
-    numRes = await client.query(query, params);
-
-    // Fallback final: n'importe quel agent actif
-    if (numRes.rows.length === 0) {
-      console.log('🔄 Fallback final: recherche d\'un agent actif quelconque...');
       
-      // Compter tous les agents actifs disponibles
-      const anyCountRes = await client.query(
-        `SELECT COUNT(*) as total_agents
-         FROM authorized_numbers an
-         JOIN agents a ON an.agent_id = a.id
-         WHERE an.is_active = true
-           AND a.is_active = true`
-      );
+      numRes = await client.query(countryAgentsQuery, [from_country_id, to_currency_id]);
       
-      const anyAgents = parseInt(anyCountRes.rows[0]?.total_agents || 0);
-      console.log(`📊 ${anyAgents} agents actifs disponibles dans le système`);
-      
-      numRes = await client.query(
-        `SELECT an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email
-         FROM authorized_numbers an
-         JOIN agents a ON an.agent_id = a.id
-         WHERE an.is_active = true
-           AND a.is_active = true
-         ORDER BY RANDOM()
-         LIMIT 1`
-      );
+      if (numRes.rows.length > 0) {
+        // Choisir aléatoirement parmi les résultats
+        const randomIndex = Math.floor(Math.random() * numRes.rows.length);
+        numRes = { rows: [numRes.rows[randomIndex]] };
+        selectionMethod = 'fallback_pays_top3_aleatoire';
+      } else {
+        // Fallback final: n'importe quel agent actif
+        console.log('🔄 Fallback final: recherche d\'un agent actif quelconque...');
+        
+        const anyAgentsQuery = `
+          SELECT 
+            an.id, an.agent_id, an.number, a.name as agent_name, a.email as agent_email,
+            COALESCE(b.amount, 0) as balance_amount
+          FROM authorized_numbers an
+          JOIN agents a ON an.agent_id = a.id
+          LEFT JOIN balances b ON a.id = b.agent_id AND b.currency_id = $1
+          WHERE an.is_active = true
+            AND a.is_active = true
+          ORDER BY COALESCE(b.amount, 0) DESC, RANDOM()
+          LIMIT 3
+        `;
+        
+        numRes = await client.query(anyAgentsQuery, [to_currency_id]);
+        
+        if (numRes.rows.length > 0) {
+          const randomIndex = Math.floor(Math.random() * numRes.rows.length);
+          numRes = { rows: [numRes.rows[randomIndex]] };
+          selectionMethod = 'fallback_general_top3_aleatoire';
+        } else {
+          numRes = { rows: [] };
+        }
+      }
     }
 
     // Si toujours aucun agent trouvé, fournir des détails de debug
@@ -207,6 +256,19 @@ export const createTransaction = async ({
       
       console.log('📞 Tous les numéros autorisés actifs:', numbersCheck.rows);
       
+      // Vérifier les soldes existants
+      const balancesCheck = await client.query(
+        `SELECT b.agent_id, a.name, b.currency_id, c.code as currency_code, b.amount
+         FROM balances b
+         JOIN agents a ON b.agent_id = a.id
+         JOIN currencies c ON b.currency_id = c.id
+         WHERE b.currency_id = $1
+         ORDER BY b.amount DESC`,
+        [to_currency_id]
+      );
+      
+      console.log('💰 Soldes pour la devise de réception:', balancesCheck.rows);
+      
       throw new Error('Aucun agent disponible dans le système. Veuillez contacter l\'administrateur.');
     }
     
@@ -215,16 +277,17 @@ export const createTransaction = async ({
       agent_id: assigned_agent_id, 
       number: authorized_number,
       agent_name,
-      agent_email 
+      agent_email,
+      balance_amount 
     } = numRes.rows[0];
     
-    console.log('✅ Agent trouvé:', { 
+    console.log('✅ Agent sélectionné:', { 
       agent_id: assigned_agent_id, 
       agent_name, 
       authorized_number,
       authorized_number_id,
-      selection_method: totalAgents > 0 ? 'critères_exacts_aléatoire' : 
-                       numRes.rows[0] ? 'fallback_pays_aléatoire' : 'fallback_general_aléatoire'
+      balance_in_reception_currency: balance_amount,
+      selection_method: selectionMethod
     });
 
     // 4. Générer un tracking code aléatoire
@@ -289,7 +352,10 @@ export const createTransaction = async ({
         rate_applied,
         tracking_code,
         agent_id: assigned_agent_id,
-        selection_method: totalAgents > 0 ? 'critères_exacts_aléatoire' : 'fallback_aléatoire'
+        agent_name: agent_name,
+        selection_method: selectionMethod,
+        balance_used: balance_amount,
+        to_currency_id: to_currency_id
       }
     }, client);
 
@@ -341,7 +407,8 @@ export const createTransaction = async ({
           sender_method_name: methods[sender_method_id] || 'Inconnu',
           receiver_method_name: methods[receiver_method_id] || 'Inconnu',
           authorized_number: authorized_number,
-          agent_name: agent_name
+          agent_name: agent_name,
+          agent_balance: balance_amount // Ajout du solde pour information
         };
 
         await notifyAgentForTransaction(agent_email, transactionWithDetails);
@@ -490,7 +557,7 @@ export const clientValidateTransaction = async (transaction_id) => {
 };
 
 // =========================
-// Valider une transaction agent ou admin - VERSION CORRIGÉE AVEC GAINS CUMULATIFS
+// Valider une transaction agent ou admin - VERSION AVEC NOMS AGENTS
 // =========================
 export const validateTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
@@ -527,23 +594,26 @@ export const validateTransaction = async (transaction_id, actor) => {
       [transaction_id]
     );
 
-    // Récupérer les devises des pays d'envoi et de réception
-    const currenciesRes = await client.query(
-      `SELECT 
-          fc.currency_id as from_currency_id,
-          tc.currency_id as to_currency_id,
-          from_curr.code as from_currency_code,
-          from_curr.symbol as from_currency_symbol,
-          to_curr.code as to_currency_code,
-          to_curr.symbol as to_currency_symbol
-       FROM transactions t
-       JOIN countries fc ON t.from_country_id = fc.id
-       JOIN countries tc ON t.to_country_id = tc.id
-       JOIN currencies from_curr ON fc.currency_id = from_curr.id
-       JOIN currencies to_curr ON tc.currency_id = to_curr.id
-       WHERE t.id = $1`,
-      [transaction_id]
-    );
+    // Récupérer les devises des pays d'envoi et de réception + nom de l'agent
+    const [currenciesRes, agentRes] = await Promise.all([
+      client.query(
+        `SELECT 
+            fc.currency_id as from_currency_id,
+            tc.currency_id as to_currency_id,
+            from_curr.code as from_currency_code,
+            from_curr.symbol as from_currency_symbol,
+            to_curr.code as to_currency_code,
+            to_curr.symbol as to_currency_symbol
+         FROM transactions t
+         JOIN countries fc ON t.from_country_id = fc.id
+         JOIN countries tc ON t.to_country_id = tc.id
+         JOIN currencies from_curr ON fc.currency_id = from_curr.id
+         JOIN currencies to_curr ON tc.currency_id = to_curr.id
+         WHERE t.id = $1`,
+        [transaction_id]
+      ),
+      client.query(`SELECT name FROM agents WHERE id = $1`, [trx.assigned_agent_id])
+    ]);
     
     if (currenciesRes.rows.length === 0) {
       throw new Error('Devises introuvables pour les pays d\'envoi et réception');
@@ -557,6 +627,8 @@ export const validateTransaction = async (transaction_id, actor) => {
       from_currency_symbol,
       to_currency_symbol
     } = currenciesRes.rows[0];
+
+    const agent_name = agentRes.rows[0]?.name || `Agent #${trx.assigned_agent_id}`;
 
     // Calcul du gain en fonction du montant d'envoi (dans la devise d'envoi)
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
@@ -653,16 +725,17 @@ export const validateTransaction = async (transaction_id, actor) => {
       type: 'DÉBIT'
     });
 
-    // 🔎 Log de validation de transaction avec double mouvement et gains cumulatifs
+    // 🔎 Log de validation de transaction AVEC NOM AGENT
     await logHistory({
       action_type: 'transaction_validated',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
-      description: `Transaction validée - Envoi: ${trx.send_amount} ${from_currency_code}, Réception: ${trx.receive_amount} ${to_currency_code}, Gain: ${gain_amount} ${from_currency_code} (${is_new_gain ? 'nouveau' : 'accumulé'})`,
+      description: `Transaction validée par ${actor.name || `Utilisateur #${actor.id}`} - Agent: ${agent_name}`,
       metadata: { 
         agent_id: trx.assigned_agent_id,
+        agent_name: agent_name,
         transaction_amount_send: trx.send_amount,
         transaction_amount_receive: trx.receive_amount,
         gain_amount: gain_amount,
@@ -671,6 +744,7 @@ export const validateTransaction = async (transaction_id, actor) => {
         from_currency: from_currency_code,
         to_currency: to_currency_code,
         validated_by: actor.id,
+        validated_by_name: actor.name || `Utilisateur #${actor.id}`,
         gain_accumulated: !is_new_gain,
         balance_movements: {
           credit: {
@@ -711,7 +785,7 @@ export const validateTransaction = async (transaction_id, actor) => {
 };
 
 // =========================
-// Annuler une transaction
+// Annuler une transaction - VERSION AVEC NOMS AGENTS
 // =========================
 export const cancelTransaction = async (transaction_id, actor) => {
   const client = await pool.connect();
@@ -720,7 +794,7 @@ export const cancelTransaction = async (transaction_id, actor) => {
 
     console.log('🔄 Annulation transaction par', actor.role, ':', transaction_id);
 
-    // Utiliser FOR UPDATE pour verrouiller la transaction
+    // Utiliser FOR UPDATE pour verrouiller la transaction et récupérer les infos
     const { rows } = await client.query(
       `UPDATE transactions SET status = 'echouee', cancelled_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND status = 'en_attente'
@@ -734,17 +808,30 @@ export const cancelTransaction = async (transaction_id, actor) => {
     
     const transaction = rows[0];
 
-    // 🔎 Log d'annulation de transaction
+    // Récupérer le nom de l'agent assigné
+    const agentRes = await client.query(
+      `SELECT name FROM agents WHERE id = $1`,
+      [transaction.assigned_agent_id]
+    );
+    
+    const agent_name = agentRes.rows[0]?.name || `Agent #${transaction.assigned_agent_id}`;
+
+    // 🔎 Log d'annulation de transaction AVEC NOM AGENT
     await logHistory({
       action_type: 'transaction_cancelled',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
-      description: `Transaction annulée - Code: ${transaction.tracking_code}`,
+      description: `Transaction annulée par ${actor.name || `Utilisateur #${actor.id}`} - Agent: ${agent_name}`,
       metadata: { 
         original_status: 'en_attente',
+        agent_id: transaction.assigned_agent_id,
+        agent_name: agent_name,
+        tracking_code: transaction.tracking_code,
+        send_amount: transaction.send_amount,
         cancelled_by: actor.id,
+        cancelled_by_name: actor.name || `Utilisateur #${actor.id}`,
         cancelled_at: new Date().toISOString()
       }
     }, client);
@@ -1555,7 +1642,9 @@ export const getAgentGainsHistory = async (agent_id, {
   }
 };
 
-// Les autres fonctions restent inchangées...
+// =========================
+// Récupérer les statistiques globales des transactions
+// =========================
 export const getTransactionStats = async (filters = {}) => {
   const client = await pool.connect();
   try {
@@ -1652,7 +1741,7 @@ export const getTransactionStats = async (filters = {}) => {
 };
 
 // =========================
-// Redirection de transaction
+// Redirection de transaction - VERSION AVEC NOMS AGENTS
 // =========================
 export const redirectTransaction = async ({
   transaction_id,
@@ -1707,11 +1796,12 @@ export const redirectTransaction = async ({
       throw new Error("Montant redirigé invalide");
     }
 
-    // Récupérer les informations détaillées pour l'email
-    const [countriesRes, methodsRes, fromAgentRes] = await Promise.all([
+    // Récupérer les informations détaillées pour l'email et les logs
+    const [countriesRes, methodsRes, fromAgentRes, toAgentRes] = await Promise.all([
       client.query(`SELECT id, name FROM countries WHERE id = ANY($1)`, [[trx.from_country_id, trx.to_country_id]]),
       client.query(`SELECT id, method FROM payment_methods WHERE id = ANY($1)`, [[trx.sender_method_id, trx.receiver_method_id]]),
-      client.query(`SELECT name, email FROM agents WHERE id = $1`, [from_agent_id])
+      client.query(`SELECT name, email FROM agents WHERE id = $1`, [from_agent_id]),
+      client.query(`SELECT name FROM agents WHERE id = $1`, [to_agent_id])
     ]);
 
     const countries = {};
@@ -1723,6 +1813,9 @@ export const redirectTransaction = async ({
     methodsRes.rows.forEach(method => {
       methods[method.id] = method.method;
     });
+
+    const from_agent_name = fromAgentRes.rows[0]?.name || `Agent #${from_agent_id}`;
+    const to_agent_name = toAgentRes.rows[0]?.name || `Agent #${to_agent_id}`;
 
     // Insérer la redirection
     const { rows: redirRows } = await client.query(
@@ -1740,20 +1833,22 @@ export const redirectTransaction = async ({
 
     const redirection = redirRows[0];
 
-    // 🔎 Log de redirection
+    // 🔎 Log de redirection AVEC NOMS DES AGENTS
     await logHistory({
       action_type: 'transaction_redirected',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'transaction',
       entity_id: transaction_id,
-      description: `Transaction redirigée de l'agent ${from_agent_id} vers l'agent ${to_agent_id}`,
+      description: `Transaction redirigée de ${from_agent_name} vers ${to_agent_name}`,
       metadata: { 
         redirection_id: redirection.id,
         redirected_amount,
         reason,
         from_agent_id,
+        from_agent_name,
         to_agent_id,
+        to_agent_name,
         transaction_status: trx.status
       }
     }, client);
@@ -1769,7 +1864,7 @@ export const redirectTransaction = async ({
 
     const redirectionWithDetails = {
       ...redirection,
-      from_agent_name: fromAgentRes.rows[0]?.name || `Agent #${from_agent_id}`,
+      from_agent_name: from_agent_name,
       transaction: transactionWithDetails
     };
 
@@ -1793,7 +1888,7 @@ export const redirectTransaction = async ({
 };
 
 // =========================
-// Accepter une redirection
+// Accepter une redirection - VERSION AVEC NOMS AGENTS
 // =========================
 export const acceptRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
@@ -1833,21 +1928,27 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
     
     const trx = trxRows[0];
 
-    // Récupérer la devise
-    const currencyRes = await client.query(
-      `SELECT fc.currency_id, c.code as currency_code 
-       FROM transactions t
-       JOIN countries fc ON t.from_country_id = fc.id
-       JOIN currencies c ON fc.currency_id = c.id
-       WHERE t.id = $1`,
-      [redir.transaction_id]
-    );
+    // Récupérer la devise et les noms des agents
+    const [currencyRes, fromAgentRes, toAgentRes] = await Promise.all([
+      client.query(
+        `SELECT fc.currency_id, c.code as currency_code 
+         FROM transactions t
+         JOIN countries fc ON t.from_country_id = fc.id
+         JOIN currencies c ON fc.currency_id = c.id
+         WHERE t.id = $1`,
+        [redir.transaction_id]
+      ),
+      client.query(`SELECT name FROM agents WHERE id = $1`, [redir.from_agent_id]),
+      client.query(`SELECT name FROM agents WHERE id = $1`, [redir.to_agent_id])
+    ]);
     
     if (!currencyRes.rows.length) {
       throw new Error('Devise introuvable pour la transaction');
     }
     
     const { currency_id, currency_code } = currencyRes.rows[0];
+    const from_agent_name = fromAgentRes.rows[0]?.name || `Agent #${redir.from_agent_id}`;
+    const to_agent_name = toAgentRes.rows[0]?.name || `Agent #${redir.to_agent_id}`;
 
     const gain_amount = (trx.send_amount * trx.commission_applied) / 100;
 
@@ -1898,40 +1999,39 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
 
     const acceptedRedirection = updated[0];
 
-    // 🔎 Log d'acceptation de redirection
+    // 🔎 Log d'acceptation de redirection AVEC NOMS AGENTS
     await logHistory({
       action_type: 'redirection_accepted',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'redirection',
       entity_id: redirection_id,
-      description: `Redirection acceptée par l'agent ${agent_id}`,
+      description: `Redirection acceptée par ${to_agent_name}`,
       metadata: { 
         transaction_id: trx.id,
         from_agent_id: redir.from_agent_id,
+        from_agent_name: from_agent_name,
         to_agent_id: redir.to_agent_id,
+        to_agent_name: to_agent_name,
         redirected_amount: redir.redirected_amount,
-        currency: currency_code
+        currency: currency_code,
+        accepted_by: actor.id,
+        accepted_by_name: actor.name || `Utilisateur #${actor.id}`
       }
     }, client);
 
     // Notifier l'agent expéditeur de l'acceptation
-    const fromAgentRes = await client.query(
+    const fromAgentEmailRes = await client.query(
       `SELECT email, name FROM agents WHERE id = $1`,
       [redir.from_agent_id]
     );
     
-    const fromAgent = fromAgentRes.rows[0];
+    const fromAgent = fromAgentEmailRes.rows[0];
 
     if (fromAgent) {
-      const toAgentRes = await client.query(
-        `SELECT name FROM agents WHERE id = $1`,
-        [redir.to_agent_id]
-      );
-      
       const redirectionWithDetails = {
         ...acceptedRedirection,
-        to_agent_name: toAgentRes.rows[0]?.name || `Agent #${redir.to_agent_id}`
+        to_agent_name: to_agent_name
       };
 
       await notifyAgentRedirectionStatus(
@@ -1955,7 +2055,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
 };
 
 // =========================
-// Rejeter une redirection
+// Rejeter une redirection - VERSION AVEC NOMS AGENTS
 // =========================
 export const rejectRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
@@ -1964,6 +2064,7 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
 
     console.log('🔄 [REDIRECT] Rejet redirection:', { redirection_id, agent_id, actor: actor.role });
 
+    // Récupérer les informations de redirection avec les noms des agents
     const { rows } = await client.query(
       `UPDATE redirections
        SET status = 'rejected', processed_at = NOW()
@@ -1978,37 +2079,47 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
     
     const rejectedRedirection = rows[0];
 
-    // 🔎 Log de rejet de redirection
+    // Récupérer les noms des agents
+    const [fromAgentRes, toAgentRes] = await Promise.all([
+      client.query(`SELECT name FROM agents WHERE id = $1`, [rejectedRedirection.from_agent_id]),
+      client.query(`SELECT name FROM agents WHERE id = $1`, [rejectedRedirection.to_agent_id])
+    ]);
+
+    const from_agent_name = fromAgentRes.rows[0]?.name || `Agent #${rejectedRedirection.from_agent_id}`;
+    const to_agent_name = toAgentRes.rows[0]?.name || `Agent #${rejectedRedirection.to_agent_id}`;
+
+    // 🔎 Log de rejet de redirection AVEC NOMS AGENTS
     await logHistory({
       action_type: 'redirection_rejected',
       actor_type: actor.role,
       actor_id: actor.id,
       entity_type: 'redirection',
       entity_id: redirection_id,
-      description: `Redirection rejetée par l'agent ${agent_id}`,
+      description: `Redirection rejetée par ${to_agent_name}`,
       metadata: { 
         transaction_id: rejectedRedirection.transaction_id,
-        reason: 'Rejeté par le destinataire'
+        from_agent_id: rejectedRedirection.from_agent_id,
+        from_agent_name: from_agent_name,
+        to_agent_id: rejectedRedirection.to_agent_id,
+        to_agent_name: to_agent_name,
+        reason: 'Rejeté par le destinataire',
+        rejected_by: actor.id,
+        rejected_by_name: actor.name || `Utilisateur #${actor.id}`
       }
     }, client);
 
     // Notifier l'agent expéditeur du rejet
-    const fromAgentRes = await client.query(
+    const fromAgentEmailRes = await client.query(
       `SELECT email, name FROM agents WHERE id = $1`,
       [rejectedRedirection.from_agent_id]
     );
     
-    const fromAgent = fromAgentRes.rows[0];
+    const fromAgent = fromAgentEmailRes.rows[0];
 
     if (fromAgent) {
-      const toAgentRes = await client.query(
-        `SELECT name FROM agents WHERE id = $1`,
-        [agent_id]
-      );
-
       const redirectionWithDetails = {
         ...rejectedRedirection,
-        to_agent_name: toAgentRes.rows[0]?.name || `Agent #${agent_id}`
+        to_agent_name: to_agent_name
       };
 
       const trxRes = await client.query(
