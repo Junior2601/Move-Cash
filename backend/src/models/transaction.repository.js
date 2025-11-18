@@ -313,7 +313,7 @@ export const createTransaction = async ({
       }
     }, client);
 
-    // 7. Notifier l'agent par email (version robuste)
+    // 7. Notifier l'agent par email (AVEC AWAIT)
     if (agent_email) {
       // Préparer les données pour l'email en parallèle
       const [countriesRes, methodsRes] = await Promise.all([
@@ -362,16 +362,11 @@ export const createTransaction = async ({
         agent_name: agent_name
       };
 
-      // Envoyer l'email sans attendre (non bloquant)
-      sendEmailSafely(notifyAgentForTransaction, agent_email, transactionWithDetails)
-        .then(result => {
-          if (result.success) {
-            console.log('✅ Notification agent envoyée avec succès');
-          }
-        })
-        .catch(err => {
-          console.error('❌ Erreur email (non bloquante):', err);
-        });
+      // 🔥 CORRECTION : Utiliser await pour l'email
+      const emailResult = await sendEmailSafely(notifyAgentForTransaction, agent_email, transactionWithDetails);
+      if (emailResult.success) {
+        console.log('✅ Notification agent envoyée avec succès');
+      }
     }
 
     await client.query('COMMIT');
@@ -1674,7 +1669,7 @@ export const getTransactionStats = async (filters = {}) => {
 };
 
 // =========================
-// Redirection de transaction
+// Redirection de transaction - VERSION AVEC AWAIT
 // =========================
 export const redirectTransaction = async ({
   transaction_id,
@@ -1795,23 +1790,28 @@ export const redirectTransaction = async ({
       transaction: transactionWithDetails
     };
 
-    // Notifier l'agent destinataire (non bloquant)
-    sendEmailSafely(
-      notifyAgentForRedirection,
-      toAgentCheck.rows[0].email, 
-      redirectionWithDetails, 
-      transactionWithDetails
-    ).then(result => {
-      if (result.success) {
+    // 🔥 CORRECTION : Utiliser await pour l'email
+    let emailResult = { success: false };
+    if (toAgentCheck.rows[0].email) {
+      emailResult = await sendEmailSafely(
+        notifyAgentForRedirection,
+        toAgentCheck.rows[0].email, 
+        redirectionWithDetails, 
+        transactionWithDetails
+      );
+      
+      if (emailResult.success) {
         console.log('✅ Notification redirection envoyée avec succès');
       }
-    }).catch(err => {
-      console.error('❌ Erreur email redirection (non bloquante):', err);
-    });
+    }
 
     await client.query('COMMIT');
     console.log('✅ Redirection créée:', redirection.id);
-    return redirection;
+    
+    return {
+      ...redirection,
+      email_sent: emailResult.success
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Erreur redirection:', err);
@@ -1822,7 +1822,7 @@ export const redirectTransaction = async ({
 };
 
 // =========================
-// Accepter une redirection
+// Accepter une redirection - VERSION AVEC AWAIT
 // =========================
 export const acceptRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
@@ -1944,7 +1944,8 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
       }
     }, client);
 
-    // Notifier l'agent expéditeur de l'acceptation (non bloquant)
+    // 🔥 CORRECTION : Utiliser await pour l'email
+    let emailResult = { success: false };
     const fromAgentRes = await client.query(
       `SELECT email, name FROM agents WHERE id = $1`,
       [redir.from_agent_id]
@@ -1963,24 +1964,26 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
         to_agent_name: toAgentRes.rows[0]?.name || `Agent #${redir.to_agent_id}`
       };
 
-      sendEmailSafely(
+      emailResult = await sendEmailSafely(
         notifyAgentRedirectionStatus,
         fromAgent.email, 
         redirectionWithDetails, 
         trx, 
         'accepted'
-      ).then(result => {
-        if (result.success) {
-          console.log('✅ Notification acceptation envoyée avec succès');
-        }
-      }).catch(err => {
-        console.error('❌ Erreur email acceptation (non bloquante):', err);
-      });
+      );
+      
+      if (emailResult.success) {
+        console.log('✅ Notification acceptation envoyée avec succès');
+      }
     }
 
     await client.query('COMMIT');
     console.log('✅ [REDIRECT] Redirection acceptée:', redirection_id);
-    return acceptedRedirection;
+    
+    return {
+      ...acceptedRedirection,
+      email_sent: emailResult.success
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ [REDIRECT] Erreur acceptation redirection:', err);
@@ -1991,7 +1994,7 @@ export const acceptRedirection = async (redirection_id, agent_id, actor) => {
 };
 
 // =========================
-// Rejeter une redirection
+// Rejeter une redirection - VERSION AVEC AWAIT
 // =========================
 export const rejectRedirection = async (redirection_id, agent_id, actor) => {
   const client = await pool.connect();
@@ -2028,7 +2031,8 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
       }
     }, client);
 
-    // Notifier l'agent expéditeur du rejet (non bloquant)
+    // 🔥 CORRECTION : Utiliser await pour l'email
+    let emailResult = { success: false };
     const fromAgentRes = await client.query(
       `SELECT email, name FROM agents WHERE id = $1`,
       [rejectedRedirection.from_agent_id]
@@ -2054,24 +2058,26 @@ export const rejectRedirection = async (redirection_id, agent_id, actor) => {
       
       const transaction = trxRes.rows[0];
 
-      sendEmailSafely(
+      emailResult = await sendEmailSafely(
         notifyAgentRedirectionStatus,
         fromAgent.email, 
         redirectionWithDetails, 
         transaction, 
         'rejected'
-      ).then(result => {
-        if (result.success) {
-          console.log('✅ Notification rejet envoyée avec succès');
-        }
-      }).catch(err => {
-        console.error('❌ Erreur email rejet (non bloquante):', err);
-      });
+      );
+      
+      if (emailResult.success) {
+        console.log('✅ Notification rejet envoyée avec succès');
+      }
     }
 
     await client.query('COMMIT');
     console.log('✅ [REDIRECT] Redirection rejetée:', redirection_id);
-    return rejectedRedirection;
+    
+    return {
+      ...rejectedRedirection,
+      email_sent: emailResult.success
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ [REDIRECT] Erreur rejet redirection:', err);
