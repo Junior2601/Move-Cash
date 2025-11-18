@@ -1,3 +1,4 @@
+// src/controllers/transaction.controller.js
 import { 
   createTransaction,
   findAllTransactions,
@@ -17,16 +18,17 @@ import {
 import { pool } from '../config/db.js';
 
 // =========================
-// Dashboard agent - VERSION AVEC API GAINS
+// Dashboard agent - VERSION CORRIGÉE
 // =========================
 export const getAgentDashboardController = async (req, res) => {
+  const client = await pool.connect(); // ✅ CORRECTION : Acquérir le client
   try {
     const agent_id = req.user.id;
 
     console.log('📊 Dashboard agent:', { agent_id });
 
     // Valider que l'agent existe
-    const agentCheck = await pool.query(
+    const agentCheck = await client.query( // ✅ CORRECTION : Utiliser client.query()
       'SELECT id, name, email, created_at FROM agents WHERE id = $1 AND is_active = true',
       [agent_id]
     );
@@ -58,12 +60,12 @@ export const getAgentDashboardController = async (req, res) => {
       return total + parseFloat(balance.balance || 0);
     }, 0);
 
-    // NOUVEAU: Récupérer les gains du mois en cours par devise
+    // Récupérer les gains du mois en cours par devise
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth() + 1;
     
-    const monthlyGainsByCurrency = await pool.query(
+    const monthlyGainsByCurrency = await client.query( // ✅ CORRECTION : Utiliser client.query()
       `SELECT 
           c.id as currency_id,
           c.code as currency_code,
@@ -82,7 +84,7 @@ export const getAgentDashboardController = async (req, res) => {
     );
 
     // Récupérer le volume des transactions du mois par devise
-    const monthlyVolumeByCurrency = await pool.query(
+    const monthlyVolumeByCurrency = await client.query( // ✅ CORRECTION : Utiliser client.query()
       `SELECT 
           c.code as currency_code,
           c.symbol as currency_symbol,
@@ -110,7 +112,7 @@ export const getAgentDashboardController = async (req, res) => {
     }, 0);
 
     // Récupérer le nombre total de transactions du mois
-    const monthlyTransactionsRes = await pool.query(
+    const monthlyTransactionsRes = await client.query( // ✅ CORRECTION : Utiliser client.query()
       `SELECT COUNT(*) as count 
        FROM transactions 
        WHERE assigned_agent_id = $1 
@@ -161,11 +163,11 @@ export const getAgentDashboardController = async (req, res) => {
         pending: pendingCount,
         completed: completedCount,
         failed: failedCount,
-        monthly_earnings: monthlyCommissions, // Commissions du mois depuis la table gains
-        monthly_volume: monthlyVolume, // Volume total des transactions
+        monthly_earnings: monthlyCommissions,
+        monthly_volume: monthlyVolume,
         monthly_transactions: monthlyTransactionCount,
-        monthly_volume_by_currency: combinedMonthlyData, // Données combinées volume + commissions
-        monthly_commissions_by_currency: monthlyGainsByCurrency.rows, // Commissions par devise
+        monthly_volume_by_currency: combinedMonthlyData,
+        monthly_commissions_by_currency: monthlyGainsByCurrency.rows,
         recent_transactions: recentTransactions.transactions,
         balances_by_currency: balancesByCurrency,
         agent_info: agentCheck.rows[0]
@@ -177,20 +179,24 @@ export const getAgentDashboardController = async (req, res) => {
       success: false,
       message: error.message || 'Erreur lors de la récupération du dashboard'
     });
+  } finally {
+    client.release(); // ✅ CORRECTION : TOUJOURS libérer le client
+    console.log('🔓 [DASHBOARD] Client DB libéré');
   }
 };
 
 // =========================
-// Statistiques personnelles agent
+// Statistiques personnelles agent - VERSION CORRIGÉE
 // =========================
 export const getAgentPersonalStatsController = async (req, res) => {
+  const client = await pool.connect(); // ✅ CORRECTION : Acquérir le client
   try {
     const agent_id = req.user.id;
     const { start_date, end_date, status } = req.query;
 
     console.log('📊 Stats personnelles agent:', { agent_id, query: req.query });
 
-    const agentCheck = await pool.query(
+    const agentCheck = await client.query( // ✅ CORRECTION : Utiliser client.query()
       'SELECT id, name FROM agents WHERE id = $1 AND is_active = true',
       [agent_id]
     );
@@ -225,11 +231,14 @@ export const getAgentPersonalStatsController = async (req, res) => {
       success: false,
       message: error.message || 'Erreur lors de la récupération des statistiques'
     });
+  } finally {
+    client.release(); // ✅ CORRECTION : TOUJOURS libérer le client
+    console.log('🔓 [STATS] Client DB libéré');
   }
 };
 
 // =========================
-// Transactions de l'agent
+// Transactions de l'agent - DÉJÀ CORRECT
 // =========================
 export const getAgentTransactionsController = async (req, res) => {
   try {
@@ -286,7 +295,7 @@ export const getAgentTransactionsController = async (req, res) => {
 };
 
 // =========================
-// Historique des gains agent
+// Historique des gains agent - DÉJÀ CORRECT
 // =========================
 export const getAgentGainsHistoryController = async (req, res) => {
   try {
@@ -338,7 +347,7 @@ export const getAgentGainsHistoryController = async (req, res) => {
 };
 
 // =========================
-// Création de transaction
+// Création de transaction - DÉJÀ CORRECT
 // =========================
 export const createTransactionController = async (req, res) => {
   try {
@@ -392,7 +401,7 @@ export const createTransactionController = async (req, res) => {
 };
 
 // =========================
-// Validation par le client
+// Validation par le client - DÉJÀ CORRECT
 // =========================
 export const clientValidateTransactionController = async (req, res) => {
   try {
@@ -404,7 +413,7 @@ export const clientValidateTransactionController = async (req, res) => {
 };
 
 // =========================
-// Validation transaction par agent/admin
+// Validation transaction par agent/admin - DÉJÀ CORRECT
 // =========================
 export const validateTransactionController = async (req, res) => {
   try {
@@ -450,7 +459,7 @@ export const validateTransactionController = async (req, res) => {
 };
 
 // =========================
-// Annulation transaction
+// Annulation transaction - DÉJÀ CORRECT
 // =========================
 export const cancelTransactionController = async (req, res) => {
   try {
@@ -489,7 +498,7 @@ export const cancelTransactionController = async (req, res) => {
 };
 
 // =========================
-// Récupération transaction par ID
+// Récupération transaction par ID - DÉJÀ CORRECT
 // =========================
 export const getTransactionByIdController = async (req, res) => {
   try {
@@ -525,7 +534,7 @@ export const getTransactionByIdController = async (req, res) => {
 };
 
 // =========================
-// Récupération transaction par tracking code
+// Récupération transaction par tracking code - DÉJÀ CORRECT
 // =========================
 export const getTransactionByTrackingCodeController = async (req, res) => {
   try {
@@ -561,7 +570,7 @@ export const getTransactionByTrackingCodeController = async (req, res) => {
 };
 
 // =========================
-// Redirection de transaction
+// Redirection de transaction - DÉJÀ CORRECT
 // =========================
 export const redirectTransactionController = async (req, res) => {
   try {
@@ -622,7 +631,7 @@ export const redirectTransactionController = async (req, res) => {
 };
 
 // =========================
-// Acceptation redirection
+// Acceptation redirection - DÉJÀ CORRECT
 // =========================
 export const acceptRedirectionController = async (req, res) => {
   try {
@@ -663,7 +672,7 @@ export const acceptRedirectionController = async (req, res) => {
 };
 
 // =========================
-// Rejet redirection
+// Rejet redirection - DÉJÀ CORRECT
 // =========================
 export const rejectRedirectionController = async (req, res) => {
   try {
@@ -702,7 +711,7 @@ export const rejectRedirectionController = async (req, res) => {
 };
 
 // =========================
-// Récupération toutes les transactions (admin)
+// Récupération toutes les transactions (admin) - DÉJÀ CORRECT
 // =========================
 export const getAllTransactionsController = async (req, res) => {
   try {
@@ -781,7 +790,7 @@ export const getAllTransactionsController = async (req, res) => {
 };
 
 // =========================
-// Statistiques transactions (admin)
+// Statistiques transactions (admin) - DÉJÀ CORRECT
 // =========================
 export const getTransactionStatsController = async (req, res) => {
   try {
@@ -815,9 +824,10 @@ export const getTransactionStatsController = async (req, res) => {
 };
 
 // =========================
-// Récupérer les transactions redirigées vers l'agent
+// Récupérer les transactions redirigées vers l'agent - VERSION CORRIGÉE
 // =========================
 export const getAgentRedirectedTransactionsController = async (req, res) => {
+  const client = await pool.connect(); // ✅ CORRECTION : Acquérir le client
   try {
     const agent_id = req.user.id;
     const {
@@ -916,9 +926,9 @@ export const getAgentRedirectedTransactionsController = async (req, res) => {
     console.log('🔍 [REDIRECT] Requête SQL:', query);
     console.log('🔍 [REDIRECT] Paramètres:', params);
 
-    // Exécuter les requêtes
-    const transactionsResult = await pool.query(query, params);
-    const countResult = await pool.query(countQuery, countParams);
+    // ✅ CORRECTION : Utiliser le client unique
+    const transactionsResult = await client.query(query, params);
+    const countResult = await client.query(countQuery, countParams);
 
     const total = parseInt(countResult.rows[0].count);
 
@@ -954,5 +964,8 @@ export const getAgentRedirectedTransactionsController = async (req, res) => {
       success: false,
       message: error.message || 'Erreur lors de la récupération des transactions redirigées'
     });
+  } finally {
+    client.release(); // ✅ CORRECTION : TOUJOURS libérer le client
+    console.log('🔓 [REDIRECT] Client DB libéré');
   }
 };
