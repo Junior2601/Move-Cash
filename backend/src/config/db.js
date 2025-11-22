@@ -1,3 +1,4 @@
+// src/config/db.js
 import pg from 'pg';
 import dotenv from 'dotenv';
 
@@ -12,10 +13,11 @@ export const pool = new Pool({
     rejectUnauthorized: false
   },
   // Configuration spécifique pour les connexions distantes
-  connectionTimeoutMillis: 19000, // 10 secondes max pour établir la connexion
-  idleTimeoutMillis: 55000, // 30 secondes avant fermeture si inactif
-  max: 10, // Réduire le nombre max de connexions pour Render
-  allowExitOnIdle: true
+  connectionTimeoutMillis: 10000, // 10 secondes max pour établir la connexion
+  idleTimeoutMillis: 30000, // 30 secondes avant fermeture si inactif
+  max: 15, // Réduire le nombre max de connexions pour Render
+  allowExitOnIdle: true,
+  maxUses: 7500,
 });
 
 // Gestion des événements du pool
@@ -51,7 +53,7 @@ export const testConnection = async () => {
 };
 
 // Fonction pour obtenir une connexion avec timeout
-export const getClientWithTimeout = async (timeoutMs = 10000) => {
+export const getClientWithTimeout = async (timeoutMs = 8000) => {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('Timeout lors de l\'acquisition de la connexion DB'));
