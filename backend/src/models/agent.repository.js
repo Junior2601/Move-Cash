@@ -16,9 +16,11 @@ export const getAgentByEmail = async (email) => {
     SELECT 
       a.*,
       c.name as country_name,
-      c.code as country_code
+      c.code as country_code,
+      admin.name as validated_by_name
     FROM agents a
     LEFT JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     WHERE a.email = $1 
     LIMIT 1
   `;
@@ -27,7 +29,7 @@ export const getAgentByEmail = async (email) => {
 };
 
 // Créer un agent avec log d'historique
-export const createAgent = async ({ email, hashedPassword, name, country_id }, admin_id = null) => {
+export const createAgent = async ({ email, hashedPassword, name, country_id, can_validate = false }, admin_id = null) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -43,17 +45,17 @@ export const createAgent = async ({ email, hashedPassword, name, country_id }, a
     }
 
     const query = `
-      INSERT INTO agents (email, password, name, country_id)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, email, name, country_id, is_active, created_at
+      INSERT INTO agents (email, password, name, country_id, can_validate, validated_by, validated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      RETURNING id, email, name, country_id, is_active, can_validate, validated_by, validated_at, created_at
     `;
-    const { rows } = await client.query(query, [email, hashedPassword, name, country_id]);
+    const { rows } = await client.query(query, [email, hashedPassword, name, country_id, can_validate, admin_id]);
     const newAgent = rows[0];
 
     // Récupérer les infos du pays pour le log
     const countryInfo = await getCountryInfo(country_id);
 
-    // 🔎 Log de création d'agent
+    // Log de création d'agent
     await logHistory({
       action_type: 'Création agent',
       actor_type: 'admin',
@@ -67,6 +69,7 @@ export const createAgent = async ({ email, hashedPassword, name, country_id }, a
         country_id: country_id,
         country_name: countryInfo.name,
         country_code: countryInfo.code,
+        can_validate: can_validate,
         created_by: admin_id
       }
     }, client);
@@ -91,11 +94,16 @@ export const getAllAgents = async (limit = 50, offset = 0) => {
       a.country_id,
       c.name as country_name,
       c.code as country_code, 
-      a.is_active, 
+      a.is_active,
+      a.can_validate,
+      a.validated_by,
+      a.validated_at,
+      admin.name as validated_by_name,
       a.created_at, 
       a.updated_at
     FROM agents a
     INNER JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     ORDER BY a.created_at DESC
     LIMIT $1 OFFSET $2
   `;
@@ -109,9 +117,11 @@ export const getAgentById = async (id) => {
     SELECT 
       a.*, 
       c.name as country_name,
-      c.code as country_code
+      c.code as country_code,
+      admin.name as validated_by_name
     FROM agents a
     INNER JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     WHERE a.id = $1
     LIMIT 1
   `;
@@ -125,7 +135,7 @@ export const updateAgent = async (id, updateData, admin_id = null) => {
   try {
     await client.query('BEGIN');
 
-    const { email, name, country_id, is_active } = updateData;
+    const { email, name, country_id, is_active, can_validate } = updateData;
 
     // Récupérer l'ancien agent pour le log
     const oldAgentResult = await client.query(
@@ -144,24 +154,48 @@ export const updateAgent = async (id, updateData, admin_id = null) => {
     
     const oldAgent = oldAgentResult.rows[0];
 
+    // Construire la requête dynamiquement
+    const updates = [];
+    const values = [id];
+    let paramCount = 2;
+
+    if (email !== undefined) {
+      updates.push(`email = $${paramCount++}`);
+      values.push(email);
+    }
+    if (name !== undefined) {
+      updates.push(`name = $${paramCount++}`);
+      values.push(name);
+    }
+    if (country_id !== undefined) {
+      updates.push(`country_id = $${paramCount++}`);
+      values.push(country_id);
+    }
+    if (is_active !== undefined) {
+      updates.push(`is_active = $${paramCount++}`);
+      values.push(is_active);
+    }
+    if (can_validate !== undefined) {
+      updates.push(`can_validate = $${paramCount++}`);
+      values.push(can_validate);
+    }
+    
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+
     const query = `
       UPDATE agents 
-      SET email = COALESCE($2, email),
-          name = COALESCE($3, name),
-          country_id = COALESCE($4, country_id),
-          is_active = COALESCE($5, is_active),
-          updated_at = CURRENT_TIMESTAMP
+      SET ${updates.join(', ')}
       WHERE id = $1
-      RETURNING id, email, name, country_id, is_active, created_at, updated_at
+      RETURNING id, email, name, country_id, is_active, can_validate, validated_by, validated_at, created_at, updated_at
     `;
     
-    const { rows } = await client.query(query, [id, email, name, country_id, is_active]);
+    const { rows } = await client.query(query, values);
     const updatedAgent = rows[0];
 
     // Récupérer les nouvelles infos du pays
     const newCountryInfo = await getCountryInfo(country_id || oldAgent.country_id);
 
-    // 🔎 Log de modification d'agent
+    // Log de modification d'agent
     await logHistory({
       action_type: 'Modification agent',
       actor_type: 'admin',
@@ -180,7 +214,66 @@ export const updateAgent = async (id, updateData, admin_id = null) => {
         new_country_name: newCountryInfo.name,
         old_status: oldAgent.is_active,
         new_status: is_active,
+        old_can_validate: oldAgent.can_validate,
+        new_can_validate: can_validate,
         updated_by: admin_id
+      }
+    }, client);
+
+    await client.query('COMMIT');
+    return updatedAgent;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// Mettre à jour la validation d'un agent
+export const updateAgentValidation = async (id, can_validate, admin_id = null) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Récupérer l'agent avant modification
+    const agentResult = await client.query(
+      `SELECT name, email FROM agents WHERE id = $1`,
+      [id]
+    );
+    
+    if (agentResult.rows.length === 0) {
+      throw new Error('Agent introuvable');
+    }
+    
+    const agent = agentResult.rows[0];
+
+    const query = `
+      UPDATE agents 
+      SET can_validate = $2,
+          validated_by = CASE WHEN $2 = true THEN $3 ELSE NULL END,
+          validated_at = CASE WHEN $2 = true THEN CURRENT_TIMESTAMP ELSE NULL END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, email, name, can_validate, validated_by, validated_at
+    `;
+    
+    const { rows } = await client.query(query, [id, can_validate, admin_id]);
+    const updatedAgent = rows[0];
+
+    // Log de modification de validation
+    await logHistory({
+      action_type: can_validate ? 'Validation agent' : 'Retrait validation agent',
+      actor_type: 'admin',
+      actor_id: admin_id,
+      entity_type: 'agent',
+      entity_id: id,
+      description: `${can_validate ? 'Validation accordée' : 'Validation retirée'} pour l'agent: ${agent.name} (${agent.email})`,
+      metadata: { 
+        agent_name: agent.name,
+        agent_email: agent.email,
+        can_validate: can_validate,
+        validated_by: admin_id
       }
     }, client);
 
@@ -222,7 +315,7 @@ export const updateAgentPassword = async (id, hashedPassword, admin_id = null) =
     const { rows } = await client.query(query, [id, hashedPassword]);
     const updatedAgent = rows[0];
 
-    // 🔎 Log de changement de mot de passe
+    // Log de changement de mot de passe
     await logHistory({
       action_type: 'agent_password_changed',
       actor_type: 'admin',
@@ -247,89 +340,49 @@ export const updateAgentPassword = async (id, hashedPassword, admin_id = null) =
   }
 };
 
-// Désactiver un agent (soft delete) avec log d'historique
-export const deactivateAgent = async (id, admin_id = null) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Récupérer les infos de l'agent avant modification
-    const agentResult = await client.query(
-      `SELECT email, name FROM agents WHERE id = $1`,
-      [id]
-    );
-    
-    if (agentResult.rows.length === 0) {
-      throw new Error('Agent introuvable');
-    }
-    
-    const agent = agentResult.rows[0];
-
-    const query = `
-      UPDATE agents 
-      SET is_active = false, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, email, name, is_active
-    `;
-    
-    const { rows } = await client.query(query, [id]);
-    const deactivatedAgent = rows[0];
-
-    // 🔎 Log de désactivation d'agent
-    await logHistory({
-      action_type: 'Desactivation agent',
-      actor_type: 'admin',
-      actor_id: admin_id,
-      entity_type: 'agent',
-      entity_id: id,
-      description: `Agent désactivé: ${agent.name} (${agent.email})`,
-      metadata: { 
-        agent_name: agent.name,
-        agent_email: agent.email,
-        deactivated_by: admin_id
-      }
-    }, client);
-
-    await client.query('COMMIT');
-    return deactivatedAgent;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
-
-// Activer un agent avec log d'historique
+// ============= VERSION OPTIMISÉE - ACTIVATION D'UN AGENT =============
 export const activateAgent = async (id, admin_id = null) => {
-  const client = await pool.connect();
+  console.log(`[activateAgent] Début activation pour l'agent ID: ${id}`);
+  
   try {
-    await client.query('BEGIN');
-
-    // Récupérer les infos de l'agent avant modification
-    const agentResult = await client.query(
-      `SELECT email, name FROM agents WHERE id = $1`,
+    // 1. Vérifier l'état actuel de l'agent
+    console.log(`[activateAgent] Vérification de l'existence de l'agent...`);
+    const checkResult = await pool.query(
+      `SELECT id, email, name, is_active FROM agents WHERE id = $1`,
       [id]
     );
     
-    if (agentResult.rows.length === 0) {
+    if (checkResult.rows.length === 0) {
+      console.log(`[activateAgent] Agent ID ${id} non trouvé`);
       throw new Error('Agent introuvable');
     }
     
-    const agent = agentResult.rows[0];
-
-    const query = `
-      UPDATE agents 
-      SET is_active = true, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, email, name, is_active
-    `;
+    const agent = checkResult.rows[0];
+    console.log(`[activateAgent] Agent trouvé: ${agent.name} (${agent.email}), is_active: ${agent.is_active}`);
     
-    const { rows } = await client.query(query, [id]);
-    const activatedAgent = rows[0];
-
-    // 🔎 Log d'activation d'agent
-    await logHistory({
+    // 2. Si déjà actif, retourner directement sans faire de mise à jour
+    if (agent.is_active === true) {
+      console.log(`[activateAgent] Agent déjà actif, retour direct`);
+      return agent;
+    }
+    
+    // 3. Mise à jour directe (sans transaction complexe)
+    console.log(`[activateAgent] Mise à jour de l'agent...`);
+    const updateResult = await pool.query(
+      `UPDATE agents 
+       SET is_active = true, 
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, email, name, is_active, country_id, can_validate, created_at, updated_at`,
+      [id]
+    );
+    
+    const activatedAgent = updateResult.rows[0];
+    console.log(`[activateAgent] Agent activé avec succès`);
+    
+    // 4. Log d'historique (asynchrone, non-bloquant)
+    console.log(`[activateAgent] Création du log d'historique...`);
+    logHistory({
       action_type: 'Activation agent',
       actor_type: 'admin',
       actor_id: admin_id,
@@ -339,17 +392,87 @@ export const activateAgent = async (id, admin_id = null) => {
       metadata: { 
         agent_name: agent.name,
         agent_email: agent.email,
-        activated_by: admin_id
+        activated_by: admin_id,
+        timestamp: new Date().toISOString()
       }
-    }, client);
-
-    await client.query('COMMIT');
+    }).catch(err => {
+      console.error('[activateAgent] Erreur lors du log historique:', err);
+    });
+    
+    console.log(`[activateAgent] Opération terminée avec succès`);
     return activatedAgent;
+    
   } catch (err) {
-    await client.query('ROLLBACK');
+    console.error('[activateAgent] Erreur:', err);
     throw err;
-  } finally {
-    client.release();
+  }
+};
+
+// ============= VERSION OPTIMISÉE - DÉSACTIVATION D'UN AGENT =============
+export const deactivateAgent = async (id, admin_id = null) => {
+  console.log(`[deactivateAgent] Début désactivation pour l'agent ID: ${id}`);
+  
+  try {
+    // 1. Vérifier l'état actuel de l'agent
+    console.log(`[deactivateAgent] Vérification de l'existence de l'agent...`);
+    const checkResult = await pool.query(
+      `SELECT id, email, name, is_active FROM agents WHERE id = $1`,
+      [id]
+    );
+    
+    if (checkResult.rows.length === 0) {
+      console.log(`[deactivateAgent] Agent ID ${id} non trouvé`);
+      throw new Error('Agent introuvable');
+    }
+    
+    const agent = checkResult.rows[0];
+    console.log(`[deactivateAgent] Agent trouvé: ${agent.name} (${agent.email}), is_active: ${agent.is_active}`);
+    
+    // 2. Si déjà inactif, retourner directement sans faire de mise à jour
+    if (agent.is_active === false) {
+      console.log(`[deactivateAgent] Agent déjà inactif, retour direct`);
+      return agent;
+    }
+    
+    // 3. Mise à jour directe (sans transaction complexe)
+    console.log(`[deactivateAgent] Mise à jour de l'agent...`);
+    const updateResult = await pool.query(
+      `UPDATE agents 
+       SET is_active = false, 
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, email, name, is_active, country_id, can_validate, created_at, updated_at`,
+      [id]
+    );
+    
+    const deactivatedAgent = updateResult.rows[0];
+    console.log(`[deactivateAgent] Agent désactivé avec succès`);
+    
+    // 4. Log d'historique (asynchrone, non-bloquant)
+    console.log(`[deactivateAgent] Création du log d'historique...`);
+    logHistory({
+      action_type: 'Desactivation agent',
+      actor_type: 'admin',
+      actor_id: admin_id,
+      entity_type: 'agent',
+      entity_id: id,
+      description: `Agent désactivé: ${agent.name} (${agent.email})`,
+      metadata: { 
+        agent_name: agent.name,
+        agent_email: agent.email,
+        deactivated_by: admin_id,
+        timestamp: new Date().toISOString()
+      }
+    }).catch(err => {
+      console.error('[deactivateAgent] Erreur lors du log historique:', err);
+    });
+    
+    console.log(`[deactivateAgent] Opération terminée avec succès`);
+    return deactivatedAgent;
+    
+  } catch (err) {
+    console.error('[deactivateAgent] Erreur:', err);
+    throw err;
   }
 };
 
@@ -380,7 +503,7 @@ export const deleteAgent = async (id, admin_id = null) => {
     const { rows } = await client.query(query, [id]);
     const deletedAgent = rows[0];
 
-    // 🔎 Log de suppression d'agent
+    // Log de suppression d'agent
     await logHistory({
       action_type: 'Suppression agent',
       actor_type: 'admin',
@@ -430,10 +553,15 @@ export const searchAgents = async (searchTerm, limit = 50, offset = 0) => {
       a.name, 
       c.name as country_name,
       c.code as country_code, 
-      a.is_active, 
+      a.is_active,
+      a.can_validate,
+      a.validated_by,
+      a.validated_at,
+      admin.name as validated_by_name,
       a.created_at
     FROM agents a
     INNER JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     WHERE a.name ILIKE $1 OR a.email ILIKE $1
     ORDER BY a.created_at DESC
     LIMIT $2 OFFSET $3
@@ -452,11 +580,16 @@ export const getAgentsByCountry = async (country_id, limit = 50, offset = 0) => 
       a.name, 
       c.name as country_name,
       c.code as country_code, 
-      a.is_active, 
+      a.is_active,
+      a.can_validate,
+      a.validated_by,
+      a.validated_at,
+      admin.name as validated_by_name,
       a.created_at,
       a.updated_at
     FROM agents a
     INNER JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     WHERE a.country_id = $1
     ORDER BY a.created_at DESC
     LIMIT $2 OFFSET $3
@@ -475,11 +608,16 @@ export const getAgentsByCountryCode = async (country_code, limit = 50, offset = 
       a.name, 
       c.name as country_name,
       c.code as country_code, 
-      a.is_active, 
+      a.is_active,
+      a.can_validate,
+      a.validated_by,
+      a.validated_at,
+      admin.name as validated_by_name,
       a.created_at,
       a.updated_at
     FROM agents a
     INNER JOIN countries c ON a.country_id = c.id
+    LEFT JOIN admins admin ON a.validated_by = admin.id
     WHERE c.code = $1
     ORDER BY a.created_at DESC
     LIMIT $2 OFFSET $3
@@ -496,6 +634,7 @@ export const getAgentsStats = async () => {
       COUNT(*) as total_agents,
       COUNT(*) FILTER (WHERE is_active = true) as active_agents,
       COUNT(*) FILTER (WHERE is_active = false) as inactive_agents,
+      COUNT(*) FILTER (WHERE can_validate = true) as validated_agents,
       COUNT(DISTINCT country_id) as countries_with_agents
     FROM agents
   `);

@@ -320,6 +320,7 @@ export const clientValidateTransaction = async (transaction_id) => {
 // =========================
 // Valider une transaction agent ou admin
 // =========================
+// Modifier la fonction validateTransaction pour vérifier l'autorisation
 export const validateTransaction = async (transaction_id, actor) => {
   const client = await acquireClient();
   try {
@@ -338,10 +339,10 @@ export const validateTransaction = async (transaction_id, actor) => {
     
     const trx = trxRes.rows[0];
 
-    // Vérifier expiration
+    // Vérifier l'expiration
     if (!trx.client_validated) {
-      const now = new Date().toISOString();
-      const expiresAt = new Date(trx.expires_at).toISOString();
+      const now = new Date();
+      const expiresAt = new Date(trx.expires_at);
       
       if (trx.status === 'en_attente' && now > expiresAt && !trx.client_validated) {
         await client.query(
@@ -359,11 +360,34 @@ export const validateTransaction = async (transaction_id, actor) => {
       throw new Error(`Transaction déjà traitée ou ${trx.status}`);
     }
 
-    // Marquer comme validée
+    // NOUVEAU: Vérification des droits selon le type d'acteur
+    if (actor.role === 'agent') {
+      // Vérifier si l'agent est autorisé à valider
+      const agentAuthRes = await client.query(
+        `SELECT can_validate FROM agents WHERE id = $1 AND is_active = true`,
+        [actor.id]
+      );
+      
+      if (agentAuthRes.rows.length === 0 || !agentAuthRes.rows[0].can_validate) {
+        throw new Error('Vous n\'êtes pas autorisé à valider des transactions. Veuillez contacter l\'administrateur.');
+      }
+      
+      // Vérifier que l'agent est bien assigné à cette transaction
+      if (trx.assigned_agent_id !== actor.id) {
+        throw new Error('Vous n\'êtes pas assigné à cette transaction');
+      }
+    }
+
+    // Marquer comme validée avec qui a traité
     await client.query(
-      `UPDATE transactions SET status = 'effectuee', completed_at = NOW(), updated_at = NOW()
+      `UPDATE transactions 
+       SET status = 'effectuee', 
+           completed_at = NOW(), 
+           updated_at = NOW(),
+           processed_by_type = $2,
+           processed_by_id = $3
        WHERE id = $1`,
-      [transaction_id]
+      [transaction_id, actor.role, actor.id]
     );
 
     // Récupérer les devises
@@ -458,6 +482,8 @@ export const validateTransaction = async (transaction_id, actor) => {
       description: `Transaction validée - Envoi: ${trx.send_amount} ${from_currency_code}, Réception: ${trx.receive_amount} ${to_currency_code}`,
       metadata: { 
         agent_id: trx.assigned_agent_id,
+        validated_by_role: actor.role,
+        validated_by_id: actor.id,
         transaction_amount_send: trx.send_amount,
         transaction_amount_receive: trx.receive_amount,
         gain_amount: gain_amount,
@@ -473,6 +499,7 @@ export const validateTransaction = async (transaction_id, actor) => {
     console.log('✅ Transaction validée avec succès:', transaction_id);
     return { 
       message: 'Transaction validée avec succès',
+      validated_by: actor.role,
       transaction_amount_send: trx.send_amount,
       transaction_amount_receive: trx.receive_amount,
       gain_amount: gain_amount,
@@ -482,9 +509,7 @@ export const validateTransaction = async (transaction_id, actor) => {
       gain_accumulated: !is_new_gain
     };
   } catch (err) {
-    await client.query('ROLLBACK').catch(rollbackError => {
-      console.error('❌ Erreur lors du rollback:', rollbackError);
-    });
+    await client.query('ROLLBACK');
     console.error('❌ Erreur validation transaction:', err);
     throw err;
   } finally {
@@ -500,13 +525,28 @@ export const cancelTransaction = async (transaction_id, actor) => {
   try {
     await client.query('BEGIN');
 
-    console.log('🔄 Annulation transaction par', actor.role, ':', transaction_id);
+    // Vérifier les droits pour l'agent
+    if (actor.role === 'agent') {
+      const agentAuthRes = await client.query(
+        `SELECT can_validate FROM agents WHERE id = $1 AND is_active = true`,
+        [actor.id]
+      );
+      
+      if (agentAuthRes.rows.length === 0 || !agentAuthRes.rows[0].can_validate) {
+        throw new Error('Vous n\'êtes pas autorisé à annuler des transactions.');
+      }
+    }
 
     const { rows } = await client.query(
-      `UPDATE transactions SET status = 'echouee', cancelled_at = NOW(), updated_at = NOW()
+      `UPDATE transactions 
+       SET status = 'echouee', 
+           cancelled_at = NOW(), 
+           updated_at = NOW(),
+           processed_by_type = $2,
+           processed_by_id = $3
        WHERE id = $1 AND status = 'en_attente'
        RETURNING *`,
-      [transaction_id]
+      [transaction_id, actor.role, actor.id]
     );
     
     if (rows.length === 0) {
@@ -532,10 +572,7 @@ export const cancelTransaction = async (transaction_id, actor) => {
     console.log('✅ Transaction annulée:', transaction_id);
     return { message: 'Transaction annulée avec succès' };
   } catch (err) {
-    await client.query('ROLLBACK').catch(rollbackError => {
-      console.error('❌ Erreur lors du rollback:', rollbackError);
-    });
-    console.error('❌ Erreur annulation transaction:', err);
+    await client.query('ROLLBACK');
     throw err;
   } finally {
     client.release();

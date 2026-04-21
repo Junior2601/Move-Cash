@@ -16,6 +16,7 @@ import TransactionsList from './pages/admin/TransactionsList';
 import HistoryList from './pages/admin/HistoryList';
 import AdminLayout from './components/ui/AdminLayout';
 import ProtectedRoute from './components/ui/ProtectedRoute';
+import SemiAdminList from './pages/admin/SemiAdminList';
 
 
 import AgentLogin from "./pages/Agents/AgentLogin";
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="agents" element={<AgentsList />} />
             <Route path="agents/:id" element={<AgentDetail />} />
+            <Route path="semi-admins" element={<SemiAdminList />} />
             <Route path="countries" element={<CountriesList />} />
             <Route path="currencies" element={<CurrenciesList />} />
             <Route path="rates" element={<RatesList />} />

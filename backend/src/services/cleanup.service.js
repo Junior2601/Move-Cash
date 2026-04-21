@@ -47,16 +47,29 @@ export class CleanupService {
   /**
    * Exécuter manuellement le nettoyage
    */
-  async runCleanup() {
+async runCleanup() {
+  let retries = 3;
+  
+  while (retries > 0) {
     try {
       const result = await expireOldTransactions();
       console.log(`🧹 Nettoyage manuel: ${result.expiredCount} transactions expirées`);
       return result;
     } catch (error) {
-      console.error('❌ Erreur lors du nettoyage manuel:', error);
-      throw error;
+      retries--;
+      console.error(`❌ Erreur lors du nettoyage (tentatives restantes: ${retries}):`, error.message);
+      
+      if (retries === 0) {
+        console.error('❌ Échec définitif du nettoyage');
+        // Ne pas throw pour éviter le crash complet
+        return { expiredCount: 0, error: error.message };
+      }
+      
+      // Attendre avant de réessayer
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
+}
 
   /**
    * Arrêter le service

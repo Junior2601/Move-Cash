@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../../api/api';
 
-// Composant de notification
+// Composant de notification (inchangé)
 const Notification = ({ message, type, onClose }) => {
   const icons = {
     success: <CheckCircle className="w-5 h-5" />,
@@ -46,7 +46,7 @@ const Notification = ({ message, type, onClose }) => {
   );
 };
 
-// Icônes pour les devises courantes (utilise seulement celles disponibles)
+// Icônes pour les devises courantes
 const currencyIcons = {
   USD: <DollarSign className="w-4 h-4" />,
   EUR: <Euro className="w-4 h-4" />,
@@ -87,11 +87,12 @@ export default function CurrenciesList() {
     
     try {
       console.log('📥 Chargement des devises...');
-      const currenciesRes = await api.get('/currency');
+      const response = await api.get('/currency');
       
-      console.log('✅ Devises chargées:', currenciesRes.data?.length || 0);
+      // Adaptation à la nouvelle structure de réponse API
+      const currenciesData = response.data?.data || response.data || [];
+      console.log('✅ Devises chargées:', currenciesData.length);
       
-      const currenciesData = currenciesRes.data || [];
       setCurrencies(currenciesData);
       
       // Calcul des statistiques
@@ -103,8 +104,9 @@ export default function CurrenciesList() {
       
     } catch (err) {
       console.error('💥 Erreur lors du chargement des devises:', err);
-      setError('Erreur lors du chargement des données');
-      showNotification('Erreur lors du chargement des données', 'error');
+      const errorMessage = err.response?.data?.message || 'Erreur lors du chargement des données';
+      setError(errorMessage);
+      showNotification(errorMessage, 'error');
     } finally {
       setLoading(false);
       console.log('🔄 fetchCurrencies - Terminé');
@@ -136,34 +138,33 @@ export default function CurrenciesList() {
     
     try {
       const currencyData = {
-        code: modal.currency.code,
+        code: modal.currency.code.toUpperCase(),
         name: modal.currency.name,
         symbol: modal.currency.symbol,
-        is_active: modal.currency.is_active
+        ...(modal.mode === "edit" && { is_active: modal.currency.is_active })
       };
 
       console.log('📤 Données à envoyer:', currencyData);
 
+      let response;
       if (modal.mode === "add") {
         console.log('➕ Mode: Création nouvelle devise');
-        await api.post('/currency', currencyData);
-        console.log('✅ Devise créée avec succès');
-        showNotification('Devise créée avec succès', 'success');
+        response = await api.post('/currency', currencyData);
       } else {
         console.log('✏️ Mode: Modification devise existante');
         console.log(`📝 ID de la devise: ${modal.currency.id}`);
-        await api.put(`/currency/${modal.currency.id}`, currencyData);
-        console.log('✅ Devise modifiée avec succès');
-        showNotification('Devise modifiée avec succès', 'success');
+        response = await api.put(`/currency/${modal.currency.id}`, currencyData);
       }
+      
+      const message = response.data?.message || (modal.mode === "add" ? 'Devise créée avec succès' : 'Devise modifiée avec succès');
+      console.log('✅ Succès:', message);
+      showNotification(message, 'success');
       
       console.log('📭 Fermeture du modal...');
       setModal(null);
-      console.log('✅ Modal fermé avec succès');
       
       console.log('🔄 Rechargement des données...');
       await fetchCurrencies();
-      console.log('✅ Données rechargées');
       
     } catch (err) {
       console.error('💥 Erreur saveCurrency:', err);
@@ -186,17 +187,20 @@ export default function CurrenciesList() {
     console.log('🗑️ deleteCurrency - Début');
     console.log(`📝 ID à supprimer: ${id}`);
     
-    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cette devise ?")) {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer définitivement cette devise ?")) {
       console.log('❌ Suppression annulée par l\'utilisateur');
       return;
     }
     
     try {
       console.log('📤 Envoi requête suppression...');
-      await api.delete(`/currency/${id}`);
-      console.log('✅ Devise supprimée avec succès');
-      showNotification('Devise supprimée avec succès', 'success');
-      fetchCurrencies();
+      const response = await api.delete(`/currency/${id}`);
+      
+      const message = response.data?.message || 'Devise supprimée avec succès';
+      console.log('✅', message);
+      showNotification(message, 'success');
+      
+      await fetchCurrencies();
     } catch (err) {
       console.error('💥 Erreur deleteCurrency:', err);
       console.error('💥 Détails erreur:', {
@@ -204,6 +208,7 @@ export default function CurrenciesList() {
         message: err.response?.data?.message,
         data: err.response?.data
       });
+      
       const errorMessage = err.response?.data?.message || 'Erreur lors de la suppression de la devise';
       showNotification(errorMessage, 'error');
     }
@@ -221,20 +226,15 @@ export default function CurrenciesList() {
     
     try {
       console.log('📤 Envoi requête toggle status...');
-      await api.put(`/currency/${currency.id}`, {
-        code: currency.code,
-        name: currency.name,
-        symbol: currency.symbol,
-        is_active: !currency.is_active
-      });
       
-      console.log('✅ Statut modifié avec succès');
-      const newStatus = !currency.is_active;
-      showNotification(
-        `Devise ${newStatus ? 'activée' : 'désactivée'} avec succès`,
-        'success'
-      );
-      fetchCurrencies();
+      // Utilisation de la nouvelle route toggle
+      const response = await api.patch(`/currency/${currency.id}/toggle`);
+      
+      const message = response.data?.message || `Devise ${currency.is_active ? 'désactivée' : 'activée'} avec succès`;
+      console.log('✅', message);
+      showNotification(message, 'success');
+      
+      await fetchCurrencies();
       
     } catch (err) {
       console.error('💥 Erreur toggleActiveStatus:', err);
@@ -243,6 +243,7 @@ export default function CurrenciesList() {
         message: err.response?.data?.message,
         data: err.response?.data
       });
+      
       const errorMessage = err.response?.data?.message || 'Erreur lors de la modification du statut';
       showNotification(errorMessage, 'error');
     }
@@ -300,10 +301,11 @@ export default function CurrenciesList() {
         {/* Afficher l'erreur si elle existe */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-            <p>{error}</p>
+            <p className="font-medium">Erreur</p>
+            <p className="text-sm">{error}</p>
             <button 
               onClick={retryLoad}
-              className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+              className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
             >
               Réessayer
             </button>
@@ -660,7 +662,7 @@ export default function CurrenciesList() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Code ISO *
+                  Code ISO * (3 caractères max)
                 </label>
                 <input
                   value={modal.currency.code}
@@ -672,9 +674,10 @@ export default function CurrenciesList() {
                   placeholder="Ex: USD, EUR, XOF"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
                   required
-                  maxLength={3}
+                  maxLength={10}
                   disabled={submitting}
                 />
+                <p className="text-xs text-gray-500 mt-1">Code unique (max 10 caractères)</p>
               </div>
               
               <div>
@@ -712,22 +715,24 @@ export default function CurrenciesList() {
                 />
               </div>
               
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={modal.currency.is_active}
-                  onChange={(e) => {
-                    console.log('📝 Changement statut:', e.target.checked);
-                    setModal({ ...modal, currency: { ...modal.currency, is_active: e.target.checked } });
-                  }}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
-                  disabled={submitting}
-                />
-                <label htmlFor="is_active" className="text-sm text-gray-700">
-                  Devise active
-                </label>
-              </div>
+              {modal.mode === "edit" && (
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={modal.currency.is_active}
+                    onChange={(e) => {
+                      console.log('📝 Changement statut:', e.target.checked);
+                      setModal({ ...modal, currency: { ...modal.currency, is_active: e.target.checked } });
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2"
+                    disabled={submitting}
+                  />
+                  <label htmlFor="is_active" className="text-sm text-gray-700">
+                    Devise active
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 pt-6">

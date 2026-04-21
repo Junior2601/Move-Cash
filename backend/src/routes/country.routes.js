@@ -5,28 +5,34 @@ import {
   getCountriesStats,
   addCountry,
   updateCountry,
+  activateCountry,
+  deactivateCountry,
+  toggleCountryStatus,
   deleteCountry,
-  toggleCountryStatus
+  getDeletedCountries,
+  restoreCountry
 } from '../controllers/country.controller.js';
 import { verifyAdminToken } from '../middlewares/auth.middleware.js';
 
 const router = express.Router();
 
-// Middleware de logging pour toutes les routes
-router.use((req, res, next) => {
-  console.log(`📍 ${req.method} ${req.originalUrl} - ${new Date().toISOString()}`);
-  next();
-});
-
 // Routes publiques
 router.get('/active', getActiveCountries);
 
-// Routes réservées à l'admin
+// Routes admin
 router.get('/', verifyAdminToken, getAllCountries);
 router.get('/stats', verifyAdminToken, getCountriesStats);
+router.get('/deleted', verifyAdminToken, getDeletedCountries); // Nouvelle route
+
 router.post('/', verifyAdminToken, addCountry);
 router.put('/:id', verifyAdminToken, updateCountry);
+
+// Routes spécifiques pour la gestion d'activation/désactivation
+router.patch('/:id/activate', verifyAdminToken, activateCountry);
+router.patch('/:id/deactivate', verifyAdminToken, deactivateCountry);
 router.patch('/:id/toggle-status', verifyAdminToken, toggleCountryStatus);
+router.patch('/:id/restore', verifyAdminToken, restoreCountry); // Restauration
+
 router.delete('/:id', verifyAdminToken, deleteCountry);
 
 export default router;

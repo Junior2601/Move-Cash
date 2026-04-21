@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import api from '../../api/api';
 
-// Composant de notification
+// Composant de notification (inchangé)
 const Notification = ({ message, type, onClose }) => {
   const icons = {
     success: <CheckCircle className="w-5 h-5" />,
@@ -23,22 +23,14 @@ const Notification = ({ message, type, onClose }) => {
     const timer = setTimeout(() => {
       onClose();
     }, 4000);
-
     return () => clearTimeout(timer);
   }, [onClose]);
 
   return (
     <div className={`fixed left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg transition-all duration-300 max-w-[90vw] ${styles[type]}`}>
-      <div className="flex-shrink-0">
-        {icons[type]}
-      </div>
-      <div className="flex-1">
-        <p className="text-sm font-medium">{message}</p>
-      </div>
-      <button
-        onClick={onClose}
-        className="flex-shrink-0 hover:opacity-70 transition-opacity"
-      >
+      <div className="flex-shrink-0">{icons[type]}</div>
+      <div className="flex-1"><p className="text-sm font-medium">{message}</p></div>
+      <button onClick={onClose} className="flex-shrink-0 hover:opacity-70 transition-opacity">
         <X className="w-4 h-4" />
       </button>
     </div>
@@ -49,9 +41,11 @@ export default function CountriesList() {
   const [countries, setCountries] = useState([]);
   const [currencies, setCurrencies] = useState([]);
   const [stats, setStats] = useState({
-    total: 0,
-    active: 0,
-    inactive: 0
+    total_countries: 0,
+    active_countries: 0,
+    inactive_countries: 0,
+    deleted_countries: 0,
+    unique_currencies: 0
   });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
@@ -61,7 +55,6 @@ export default function CountriesList() {
   const [notification, setNotification] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Fonction pour afficher une notification - STABILISÉE
   const showNotification = useCallback((message, type = 'info') => {
     console.log(`🔔 Notification ${type}:`, message);
     setNotification({ message, type });
@@ -74,31 +67,45 @@ export default function CountriesList() {
     
     try {
       console.log('📥 Chargement des pays et statistiques...');
-      const [countriesRes, statsRes] = await Promise.all([
+      
+      // Appels API adaptés aux nouvelles routes avec token
+      const [countriesRes, statsRes, currenciesRes] = await Promise.all([
         api.get('/country'),
-        api.get('/country/stats')
+        api.get('/country/stats'),
+        api.get('/currency/active')
       ]);
       
-      console.log('✅ Pays chargés:', countriesRes.data?.length || 0);
-      console.log('✅ Statistiques chargées:', statsRes.data);
+      console.log('✅ Réponse pays:', countriesRes.data);
+      console.log('✅ Réponse stats:', statsRes.data);
+      console.log('✅ Réponse devises:', currenciesRes.data);
       
-      setCountries(countriesRes.data || []);
-      setStats(statsRes.data || { total: 0, active: 0, inactive: 0 });
-      
-      try {
-        console.log('💰 Chargement des devises...');
-        const currenciesRes = await api.get('/currency/active');
-        console.log('✅ Devises chargées:', currenciesRes.data?.length || 0);
-        setCurrencies(currenciesRes.data || []);
-      } catch (currencyError) {
-        console.warn('⚠️ Erreur lors du chargement des devises:', currencyError);
-        setCurrencies([]);
-      }
+      // Adaptation au format de réponse { success, data }
+      setCountries(countriesRes.data?.data || []);
+      setStats(statsRes.data?.data || { 
+        total_countries: 0, 
+        active_countries: 0, 
+        inactive_countries: 0,
+        deleted_countries: 0,
+        unique_currencies: 0
+      });
+      setCurrencies(currenciesRes.data?.data || []);
       
     } catch (err) {
-      console.error('💥 Erreur lors du chargement des pays:', err);
-      setError('Erreur lors du chargement des données');
-      showNotification('Erreur lors du chargement des données', 'error');
+      console.error('💥 Erreur lors du chargement:', err);
+      console.error('💥 Détails erreur:', {
+        status: err.response?.status,
+        message: err.response?.data?.message,
+        data: err.response?.data
+      });
+      
+      // Gestion des erreurs d'authentification
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        setError('Session expirée. Veuillez vous reconnecter.');
+        showNotification('Session expirée. Veuillez vous reconnecter.', 'error');
+      } else {
+        setError('Erreur lors du chargement des données');
+        showNotification('Erreur lors du chargement des données', 'error');
+      }
     } finally {
       setLoading(false);
       console.log('🔄 fetchCountries - Terminé');
@@ -121,7 +128,6 @@ export default function CountriesList() {
     e.preventDefault();
     console.log('💾 saveCountry - Début');
     
-    // Empêcher les doubles soumissions
     if (submitting) {
       console.log('⏳ Soumission déjà en cours...');
       return;
@@ -132,37 +138,31 @@ export default function CountriesList() {
     
     try {
       const countryData = {
-        name: modal.country.name,
-        code: modal.country.code,
-        phone_prefix: modal.country.phone_prefix,
-        currency_id: parseInt(modal.country.currency_id),
-        is_active: modal.country.is_active
+        name: modal.country.name?.trim(),
+        code: modal.country.code?.trim().toUpperCase(),
+        phone_prefix: modal.country.phone_prefix?.trim(),
+        currency_id: parseInt(modal.country.currency_id)
       };
 
       console.log('📤 Données à envoyer:', countryData);
 
       if (modal.mode === "add") {
         console.log('➕ Mode: Création nouveau pays');
-        await api.post('/country', countryData);
-        console.log('✅ Pays créé avec succès');
-        showNotification('Pays créé avec succès', 'success');
+        const response = await api.post('/country', countryData);
+        console.log('✅ Réponse création:', response.data);
+        showNotification(response.data?.message || 'Pays créé avec succès', 'success');
       } else {
         console.log('✏️ Mode: Modification pays existant');
-        console.log(`📝 ID du pays: ${modal.country.id}`);
-        await api.put(`/country/${modal.country.id}`, countryData);
-        console.log('✅ Pays modifié avec succès');
-        showNotification('Pays modifié avec succès', 'success');
+        const response = await api.put(`/country/${modal.country.id}`, {
+          ...countryData,
+          is_active: modal.country.is_active
+        });
+        console.log('✅ Réponse modification:', response.data);
+        showNotification(response.data?.message || 'Pays modifié avec succès', 'success');
       }
       
-      // FERMER LE MODAL IMMÉDIATEMENT APRÈS SUCCÈS
-      console.log('📭 Fermeture du modal...');
       setModal(null);
-      console.log('✅ Modal fermé avec succès');
-      
-      // Recharger les données
-      console.log('🔄 Rechargement des données...');
       await fetchCountries();
-      console.log('✅ Données rechargées');
       
     } catch (err) {
       console.error('💥 Erreur saveCountry:', err);
@@ -174,9 +174,6 @@ export default function CountriesList() {
       
       const errorMessage = err.response?.data?.message || 'Erreur lors de la sauvegarde du pays';
       showNotification(errorMessage, 'error');
-      
-      // NE PAS FERMER LE MODAL EN CAS D'ERREUR
-      console.log('❌ Erreur - Le modal reste ouvert pour correction');
     } finally {
       setSubmitting(false);
       console.log('🏁 saveCountry - Terminé');
@@ -187,16 +184,16 @@ export default function CountriesList() {
     console.log('🗑️ deleteCountry - Début');
     console.log(`📝 ID à supprimer: ${id}`);
     
-    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce pays ?")) {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer définitivement ce pays ?")) {
       console.log('❌ Suppression annulée par l\'utilisateur');
       return;
     }
     
     try {
       console.log('📤 Envoi requête suppression...');
-      await api.delete(`/country/${id}`);
-      console.log('✅ Pays supprimé avec succès');
-      showNotification('Pays supprimé avec succès', 'success');
+      const response = await api.delete(`/country/${id}`);
+      console.log('✅ Réponse suppression:', response.data);
+      showNotification(response.data?.message || 'Pays supprimé avec succès', 'success');
       fetchCountries();
     } catch (err) {
       console.error('💥 Erreur deleteCountry:', err);
@@ -222,16 +219,12 @@ export default function CountriesList() {
     
     try {
       console.log('📤 Envoi requête toggle status...');
-      await api.patch(`/country/${country.id}/toggle-status`, {
-        is_active: !country.is_active
-      });
       
-      console.log('✅ Statut modifié avec succès');
-      const newStatus = !country.is_active;
-      showNotification(
-        `Pays ${newStatus ? 'activé' : 'désactivé'} avec succès`,
-        'success'
-      );
+      // Utilisation de la route toggle-status
+      const response = await api.patch(`/country/${country.id}/toggle-status`);
+      
+      console.log('✅ Réponse toggle:', response.data);
+      showNotification(response.data?.message || `Pays ${!country.is_active ? 'activé' : 'désactivé'} avec succès`, 'success');
       fetchCountries();
       
     } catch (err) {
@@ -277,7 +270,7 @@ export default function CountriesList() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
-      {/* Notification - Position optimisée pour mobile */}
+      {/* Notification */}
       {notification && (
         <div className="fixed inset-x-0 top-4 z-50 px-4">
           <Notification
@@ -295,7 +288,7 @@ export default function CountriesList() {
           <p className="text-gray-600 text-sm">Administrez les pays et leurs configurations</p>
         </div>
 
-        {/* Afficher l'erreur si elle existe */}
+        {/* Affichage de l'erreur */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
             <p>{error}</p>
@@ -308,7 +301,6 @@ export default function CountriesList() {
           </div>
         )}
 
-        {/* Le reste du code reste inchangé */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           {/* En-tête de carte avec actions */}
           <div className="px-4 py-3 border-b border-gray-200">
@@ -379,14 +371,14 @@ export default function CountriesList() {
             </div>
           </div>
 
-          {/* Cartes de statistiques */}
+          {/* Cartes de statistiques - Adaptées aux nouvelles stats */}
           <div className="p-4 border-b border-gray-200 bg-gray-50">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="bg-white p-4 rounded-lg border border-gray-200">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-500 text-sm font-medium">Total</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stats.total_countries}</p>
                   </div>
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <Globe className="w-5 h-5 text-blue-600" />
@@ -397,7 +389,7 @@ export default function CountriesList() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-500 text-sm font-medium">Actifs</p>
-                    <p className="text-2xl font-bold text-green-600">{stats.active}</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.active_countries}</p>
                   </div>
                   <div className="p-2 bg-green-100 rounded-lg">
                     <TrendingUp className="w-5 h-5 text-green-600" />
@@ -408,7 +400,7 @@ export default function CountriesList() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-500 text-sm font-medium">Inactifs</p>
-                    <p className="text-2xl font-bold text-red-600">{stats.inactive}</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.inactive_countries}</p>
                   </div>
                   <div className="p-2 bg-red-100 rounded-lg">
                     <TrendingDown className="w-5 h-5 text-red-600" />
@@ -454,7 +446,10 @@ export default function CountriesList() {
                         </div>
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Currency className="w-3 h-3" />
-                          {country.currency_code || 'Aucune devise'}
+                          {country.currency_code ? 
+                            `${country.currency_code} - ${country.currency_name || ''}` : 
+                            'Aucune devise'
+                          }
                         </div>
                       </div>
                       <span
@@ -479,10 +474,7 @@ export default function CountriesList() {
                         Modifier
                       </button>
                       <button
-                        onClick={() => {
-                          console.log('🔄 Toggle status pays:', country.id);
-                          toggleActiveStatus(country);
-                        }}
+                        onClick={() => toggleActiveStatus(country)}
                         className={`flex-1 flex items-center justify-center gap-1 px-3 py-2 border rounded-lg transition-colors text-sm ${
                           country.is_active
                             ? "text-orange-600 border-orange-600 hover:bg-orange-50"
@@ -493,10 +485,7 @@ export default function CountriesList() {
                         {country.is_active ? "Désactiver" : "Activer"}
                       </button>
                       <button
-                        onClick={() => {
-                          console.log('🗑️ Suppression pays:', country.id);
-                          deleteCountry(country.id);
-                        }}
+                        onClick={() => deleteCountry(country.id)}
                         className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors text-sm"
                       >
                         <Trash2 size={14} />
@@ -555,7 +544,10 @@ export default function CountriesList() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
                         <Currency className="w-4 h-4 text-gray-400 mr-2" />
-                        {country.currency_code || 'Aucune'}
+                        {country.currency_code ? 
+                          `${country.currency_code} (${country.currency_symbol || ''})` : 
+                          'Aucune'
+                        }
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -572,20 +564,14 @@ export default function CountriesList() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => {
-                            console.log('✏️ Ouverture modal modification pays:', country);
-                            setModal({ mode: "edit", country });
-                          }}
+                          onClick={() => setModal({ mode: "edit", country })}
                           className="text-blue-600 hover:text-blue-900 transition-colors flex items-center gap-1"
                         >
                           <Edit size={16} />
                           Modifier
                         </button>
                         <button
-                          onClick={() => {
-                            console.log('🔄 Toggle status pays:', country.id);
-                            toggleActiveStatus(country);
-                          }}
+                          onClick={() => toggleActiveStatus(country)}
                           className={`hover:text-opacity-80 transition-colors flex items-center gap-1 ${
                             country.is_active
                               ? "text-orange-600 hover:text-orange-900"
@@ -596,10 +582,7 @@ export default function CountriesList() {
                           {country.is_active ? "Désactiver" : "Activer"}
                         </button>
                         <button
-                          onClick={() => {
-                            console.log('🗑️ Suppression pays:', country.id);
-                            deleteCountry(country.id);
-                          }}
+                          onClick={() => deleteCountry(country.id)}
                           className="text-red-600 hover:text-red-900 transition-colors flex items-center gap-1"
                         >
                           <Trash2 size={16} />
@@ -617,7 +600,7 @@ export default function CountriesList() {
           {filteredCountries.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
               <p className="text-sm text-gray-600">
-                {filteredCountries.length} pays{filteredCountries.length > 1 ? '' : ''} trouvé{filteredCountries.length > 1 ? 's' : ''}
+                {filteredCountries.length} pays{filteredCountries.length > 1 ? 's' : ''} trouvé{filteredCountries.length > 1 ? 's' : ''}
               </p>
             </div>
           )}
@@ -629,7 +612,6 @@ export default function CountriesList() {
         <div 
           className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50"
           onClick={(e) => {
-            // Fermer le modal en cliquant en dehors (seulement si pas en cours de soumission)
             if (e.target === e.currentTarget && !submitting) {
               console.log('👆 Clic en dehors - Fermeture modal');
               setModal(null);
@@ -682,21 +664,22 @@ export default function CountriesList() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Code ISO *
+                  Code ISO (3 caractères) *
                 </label>
                 <input
                   value={modal.country.code}
                   onChange={(e) => {
-                    const newCode = e.target.value.toUpperCase();
+                    const newCode = e.target.value.toUpperCase().slice(0, 3);
                     console.log('📝 Changement code:', newCode);
                     setModal({ ...modal, country: { ...modal.country, code: newCode } });
                   }}
-                  placeholder="Ex: FR, CI, US"
+                  placeholder="Ex: FRA, CIV, USA"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase"
                   required
                   maxLength={3}
                   disabled={submitting}
                 />
+                <p className="text-xs text-gray-500 mt-1">Code ISO 3166-1 alpha-3 (3 lettres)</p>
               </div>
               
               <div>

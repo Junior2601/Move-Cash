@@ -9,6 +9,7 @@ import {
   getAgentById,
   updateAgent,
   updateAgentPassword,
+  updateAgentValidation,
   deactivateAgent,
   activateAgent,
   deleteAgent,
@@ -16,7 +17,8 @@ import {
   countAgentsByCountry,
   searchAgents,
   getAgentsByCountry,
-  getAgentsByCountryCode
+  getAgentsByCountryCode,
+  getAgentsStats
 } from '../models/agent.repository.js';
 
 dotenv.config();
@@ -24,7 +26,14 @@ dotenv.config();
 // Création d'un agent par l'admin
 export const registerAgent = async (req, res) => {
   try {
-    const { email, password, name, country_id } = req.body;
+    const { email, password, name, country_id, can_validate = false } = req.body;
+    const admin_id = req.user.id;
+
+    if (!email || !password || !name || !country_id) {
+      return res.status(400).json({ 
+        message: 'Tous les champs sont requis: email, password, name, country_id' 
+      });
+    }
 
     const existingAgent = await getAgentByEmail(email);
     if (existingAgent) {
@@ -32,10 +41,20 @@ export const registerAgent = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newAgent = await createAgent({ email, hashedPassword, name, country_id });
+    const newAgent = await createAgent({ 
+      email, 
+      hashedPassword, 
+      name, 
+      country_id,
+      can_validate 
+    }, admin_id);
 
-    res.status(201).json({ message: 'Agent créé avec succès', agent: newAgent });
+    res.status(201).json({ 
+      message: 'Agent créé avec succès', 
+      agent: newAgent 
+    });
   } catch (err) {
+    console.error('Erreur création agent:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -56,11 +75,17 @@ export const loginAgent = async (req, res) => {
     }
 
     if (!agent.is_active) {
-      return res.status(403).json({ message: 'Compte désactivé' });
+      return res.status(403).json({ message: 'Compte désactivé. Veuillez contacter un administrateur.' });
     }
 
     const token = jwt.sign(
-      { id: agent.id, email: agent.email, role: 'agent', country_id: agent.country_id },
+      { 
+        id: agent.id, 
+        email: agent.email, 
+        role: 'agent', 
+        country_id: agent.country_id,
+        can_validate: agent.can_validate 
+      },
       process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
@@ -73,18 +98,22 @@ export const loginAgent = async (req, res) => {
         email: agent.email,
         name: agent.name,
         country_id: agent.country_id,
-        is_active: agent.is_active
+        country_name: agent.country_name,
+        country_code: agent.country_code,
+        is_active: agent.is_active,
+        can_validate: agent.can_validate
       }
     });
   } catch (err) {
+    console.error('Erreur login agent:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
-// Récupérer tous les agents
+// Récupérer tous les agents (admin)
 export const getAgents = async (req, res) => {
   try {
-    const { page = 1, limit = 50, search, country_id } = req.query;
+    const { page = 1, limit = 50, search, country_id, is_active, can_validate } = req.query;
     const offset = (page - 1) * limit;
 
     let agents;
@@ -94,7 +123,6 @@ export const getAgents = async (req, res) => {
       agents = await searchAgents(search, limit, offset);
       total = await countAgents();
     } else if (country_id) {
-      // Vérifier si le pays existe
       const country = await pool.query('SELECT id, name FROM countries WHERE id = $1', [country_id]);
       if (country.rows.length === 0) {
         return res.status(404).json({ message: 'Pays non trouvé' });
@@ -106,10 +134,21 @@ export const getAgents = async (req, res) => {
       total = await countAgents();
     }
 
+    let filteredAgents = agents;
+    if (is_active !== undefined) {
+      const isActiveBool = is_active === 'true';
+      filteredAgents = filteredAgents.filter(agent => agent.is_active === isActiveBool);
+    }
+    
+    if (can_validate !== undefined) {
+      const canValidateBool = can_validate === 'true';
+      filteredAgents = filteredAgents.filter(agent => agent.can_validate === canValidateBool);
+    }
+
     const totalPages = Math.ceil(total / limit);
 
     res.json({
-      agents,
+      agents: filteredAgents,
       pagination: {
         currentPage: parseInt(page),
         totalPages,
@@ -119,6 +158,7 @@ export const getAgents = async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('Erreur récupération agents:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -135,6 +175,7 @@ export const getAgent = async (req, res) => {
 
     res.json({ agent });
   } catch (err) {
+    console.error('Erreur récupération agent:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -146,12 +187,10 @@ export const getAgentsByCountryIdController = async (req, res) => {
     const { page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
-    // Validation de l'ID du pays
     if (!country_id || isNaN(country_id)) {
       return res.status(400).json({ message: 'ID de pays invalide' });
     }
 
-    // Vérifier si le pays existe
     const country = await pool.query('SELECT id, name, code FROM countries WHERE id = $1', [country_id]);
     if (country.rows.length === 0) {
       return res.status(404).json({ message: 'Pays non trouvé' });
@@ -173,6 +212,7 @@ export const getAgentsByCountryIdController = async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('Erreur récupération agents par pays:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -184,7 +224,6 @@ export const getAgentsByCountryCodeController = async (req, res) => {
     const { page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
-    // Vérifier si le pays existe et récupérer son ID
     const country = await pool.query(
       'SELECT id, name, code FROM countries WHERE code = $1',
       [country_code.toUpperCase()]
@@ -210,23 +249,23 @@ export const getAgentsByCountryCodeController = async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('Erreur récupération agents par code pays:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
-// Mettre à jour un agent
+// Mettre à jour un agent (admin)
 export const updateAgentProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, name, country_id, is_active } = req.body;
+    const { email, name, country_id, is_active, can_validate } = req.body;
+    const admin_id = req.user.id;
 
-    // Vérifier si l'agent existe
     const existingAgent = await getAgentById(id);
     if (!existingAgent) {
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
-    // Vérifier si l'email est déjà utilisé par un autre agent
     if (email && email !== existingAgent.email) {
       const agentWithEmail = await getAgentByEmail(email);
       if (agentWithEmail && agentWithEmail.id !== parseInt(id)) {
@@ -234,19 +273,53 @@ export const updateAgentProfile = async (req, res) => {
       }
     }
 
-    const updatedAgent = await updateAgent(id, { email, name, country_id, is_active });
+    const updatedAgent = await updateAgent(id, { email, name, country_id, is_active, can_validate }, admin_id);
 
     res.json({ message: 'Agent mis à jour avec succès', agent: updatedAgent });
   } catch (err) {
+    console.error('Erreur mise à jour agent:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
-// Changer le mot de passe d'un agent
+// Valider/Dévalider un agent (admin)
+export const validateAgent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { can_validate } = req.body;
+    const admin_id = req.user.id;
+
+    if (can_validate === undefined) {
+      return res.status(400).json({ message: 'Le champ can_validate est requis' });
+    }
+
+    const agent = await getAgentById(id);
+    if (!agent) {
+      return res.status(404).json({ message: 'Agent non trouvé' });
+    }
+
+    const updatedAgent = await updateAgentValidation(id, can_validate, admin_id);
+
+    res.json({ 
+      message: can_validate ? 'Agent validé avec succès' : 'Validation agent retirée avec succès', 
+      agent: updatedAgent 
+    });
+  } catch (err) {
+    console.error('Erreur validation agent:', err);
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
+  }
+};
+
+// Changer le mot de passe d'un agent (admin)
 export const changeAgentPassword = async (req, res) => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
+    const admin_id = req.user.id;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'Le mot de passe doit contenir au moins 6 caractères' });
+    }
 
     const agent = await getAgentById(id);
     if (!agent) {
@@ -254,54 +327,79 @@ export const changeAgentPassword = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await updateAgentPassword(id, hashedPassword);
+    await updateAgentPassword(id, hashedPassword, admin_id);
 
     res.json({ message: 'Mot de passe modifié avec succès' });
   } catch (err) {
+    console.error('Erreur changement mot de passe:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
-// Désactiver un agent
+// ============= VERSION OPTIMISÉE - DÉSACTIVER UN AGENT =============
 export const deactivateAgentAccount = async (req, res) => {
   try {
+    console.log(`[deactivateAgentAccount] Début - ID: ${req.params.id}`);
     const { id } = req.params;
+    const admin_id = req.user.id;
 
+    // Vérifier si l'agent existe
     const agent = await getAgentById(id);
     if (!agent) {
+      console.log(`[deactivateAgentAccount] Agent ID ${id} non trouvé`);
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
+    // Vérifier si déjà désactivé
     if (!agent.is_active) {
+      console.log(`[deactivateAgentAccount] Agent déjà désactivé`);
       return res.status(400).json({ message: 'Agent déjà désactivé' });
     }
 
-    const deactivatedAgent = await deactivateAgent(id);
+    console.log(`[deactivateAgentAccount] Appel de deactivateAgent...`);
+    const deactivatedAgent = await deactivateAgent(id, admin_id);
+    console.log(`[deactivateAgentAccount] Agent désactivé avec succès`);
 
-    res.json({ message: 'Agent désactivé avec succès', agent: deactivatedAgent });
+    res.json({ 
+      message: 'Agent désactivé avec succès', 
+      agent: deactivatedAgent 
+    });
   } catch (err) {
+    console.error('[deactivateAgentAccount] Erreur:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
-// Activer un agent
+// ============= VERSION OPTIMISÉE - ACTIVER UN AGENT =============
 export const activateAgentAccount = async (req, res) => {
   try {
+    console.log(`[activateAgentAccount] Début - ID: ${req.params.id}`);
     const { id } = req.params;
+    const admin_id = req.user.id;
 
+    // Vérifier si l'agent existe
     const agent = await getAgentById(id);
     if (!agent) {
+      console.log(`[activateAgentAccount] Agent ID ${id} non trouvé`);
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
+    // Vérifier si déjà activé
     if (agent.is_active) {
+      console.log(`[activateAgentAccount] Agent déjà activé`);
       return res.status(400).json({ message: 'Agent déjà activé' });
     }
 
-    const activatedAgent = await activateAgent(id);
+    console.log(`[activateAgentAccount] Appel de activateAgent...`);
+    const activatedAgent = await activateAgent(id, admin_id);
+    console.log(`[activateAgentAccount] Agent activé avec succès`);
 
-    res.json({ message: 'Agent activé avec succès', agent: activatedAgent });
+    res.json({ 
+      message: 'Agent activé avec succès', 
+      agent: activatedAgent 
+    });
   } catch (err) {
+    console.error('[activateAgentAccount] Erreur:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -310,16 +408,18 @@ export const activateAgentAccount = async (req, res) => {
 export const deleteAgentAccount = async (req, res) => {
   try {
     const { id } = req.params;
+    const admin_id = req.user.id;
 
     const agent = await getAgentById(id);
     if (!agent) {
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
-    const deletedAgent = await deleteAgent(id);
+    const deletedAgent = await deleteAgent(id, admin_id);
 
     res.json({ message: 'Agent supprimé avec succès', agent: deletedAgent });
   } catch (err) {
+    console.error('Erreur suppression agent:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -334,8 +434,11 @@ export const getProfile = async (req, res) => {
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
+    delete agent.password;
+    
     res.json({ agent });
   } catch (err) {
+    console.error('Erreur récupération profil:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -362,6 +465,7 @@ export const updateProfile = async (req, res) => {
 
     res.json({ message: 'Profil mis à jour avec succès', agent: updatedAgent });
   } catch (err) {
+    console.error('Erreur mise à jour profil:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -372,12 +476,19 @@ export const changePassword = async (req, res) => {
     const agentId = req.user.id;
     const { currentPassword, newPassword } = req.body;
 
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Les mots de passe actuels et nouveaux sont requis' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Le nouveau mot de passe doit contenir au moins 6 caractères' });
+    }
+
     const agent = await getAgentById(agentId);
     if (!agent) {
       return res.status(404).json({ message: 'Agent non trouvé' });
     }
 
-    // Vérifier le mot de passe actuel
     const isMatch = await bcrypt.compare(currentPassword, agent.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Mot de passe actuel incorrect' });
@@ -388,6 +499,7 @@ export const changePassword = async (req, res) => {
 
     res.json({ message: 'Mot de passe modifié avec succès' });
   } catch (err) {
+    console.error('Erreur changement mot de passe:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
@@ -412,15 +524,14 @@ export const getAgentsListForAgents = async (req, res) => {
       total = await countAgents();
     }
 
-    // Filtrer les données sensibles pour les agents
     const filteredAgents = agents.map(agent => ({
       id: agent.id,
       name: agent.name,
       country_name: agent.country_name,
       country_code: agent.country_code,
       is_active: agent.is_active,
+      can_validate: agent.can_validate,
       created_at: agent.created_at
-      // On exclut l'email et autres données sensibles
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -436,10 +547,12 @@ export const getAgentsListForAgents = async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('Erreur récupération liste agents:', err);
     res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };
 
+// Récupérer la liste des agents pour redirection
 export const getAgentsListForRedirection = async (req, res) => {
   try {
     const currentAgentId = req.user.id;
@@ -450,7 +563,8 @@ export const getAgentsListForRedirection = async (req, res) => {
         a.name,
         a.email,
         c.name as country_name,
-        c.code as country_code
+        c.code as country_code,
+        a.can_validate
       FROM agents a
       LEFT JOIN countries c ON a.country_id = c.id
       WHERE a.id != $1 
@@ -468,5 +582,16 @@ export const getAgentsListForRedirection = async (req, res) => {
       success: false,
       message: 'Erreur lors de la récupération des agents'
     });
+  }
+};
+
+// Récupérer les statistiques des agents (admin)
+export const getAgentsStatistics = async (req, res) => {
+  try {
+    const stats = await getAgentsStats();
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    console.error('Erreur récupération statistiques:', err);
+    res.status(500).json({ message: 'Erreur serveur', error: err.message });
   }
 };

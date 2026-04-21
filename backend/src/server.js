@@ -22,6 +22,8 @@ import gainRoutes from "./routes/gain.routes.js";
 import historyRoutes from './routes/history.routes.js';
 import cleanupRoutes from './routes/cleanup.routes.js';
 import statisticsRoutes from './routes/statistics.routes.js';
+import semiAdminRoutes from './routes/semi_admin.routes.js';
+import agentAuthorizationRoutes from './routes/agent_authorization.routes.js';
 
 
 dotenv.config();
@@ -45,6 +47,8 @@ app.use('/api/balance', balanceRoutes);
 app.use('/api/gain', gainRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/admin', cleanupRoutes); // Protégez cette route avec une authentification admin!
+app.use('/api/semi-admins', semiAdminRoutes);
+app.use('/api/authorizations', agentAuthorizationRoutes);
 app.use('/api', statisticsRoutes);
 
 
